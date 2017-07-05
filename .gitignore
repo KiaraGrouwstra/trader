@@ -1,0 +1,21 @@
+project
+log
+.idea
+target
+
+# Compiled class file
+*.class
+
+# Log file
+*.log
+hs_err_pid*
+
+# Package Files #
+*.jar
+*.war
+*.ear
+*.zip
+*.tar.gz
+*.rar
+
+src/main/resources/conf.yml

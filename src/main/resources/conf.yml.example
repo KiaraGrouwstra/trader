@@ -1,0 +1,18 @@
+cryptoping:
+  user: user@example.com
+  pw: mypassword
+wallets:
+  BTC: ABCDEFGHIJKLMNOPQRSTUVWXYZ
+exchanges:
+  # # bittrex
+  # "org.knowm.xchange.bittrex.v1.BittrexExchange":
+  #   apikey: ABCDEFGHIJKLMNOPQRSTUVWXYZ
+  #   secret: ABCDEFGHIJKLMNOPQRSTUVWXYZ
+  # # yobit
+  # "org.knowm.xchange.yobit.YoBitExchange":
+  #   apikey: ABCDEFGHIJKLMNOPQRSTUVWXYZ
+  #   secret: ABCDEFGHIJKLMNOPQRSTUVWXYZ
+  # # poloniex
+  # "org.knowm.xchange.poloniex.PoloniexExchange":
+  #   apikey: ABCDEFGHIJKLMNOPQRSTUVWXYZ
+  #   secret: ABCDEFGHIJKLMNOPQRSTUVWXYZ
