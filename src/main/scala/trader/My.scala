@@ -34,7 +34,7 @@ object My {
   // val maxAge = 15 hours
   val maxPings = 1
   // sell if the prices doesn't live up to expectations over different time periods
-  val timeRules: List[Tuple2[Double, FiniteDuration]] = List(
+  val timeRules: List[(Double, FiniteDuration)] = List(
     (0.995, 10 seconds),
     (0.999, 1 minutes),
     (1.0, 3 minutes),
