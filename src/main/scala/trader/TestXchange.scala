@@ -33,7 +33,7 @@ object TestXchange {
 
       // "org.knowm.xchange.yobit.YoBitExchange"
       // tradingFee=0.2, minimumAmount=0.0001
-      // getAccountService -> null // fee 0.2%, withdrawal free 0.0001 (BTC?)
+      // getAccountService -> null // fee 0.2%, withdrawal fee 0.0001 (BTC?)
       // issues: null for AccountService and Ticker
 
   def main(args: Array[String]): Unit = {
@@ -80,20 +80,25 @@ object TestXchange {
     //   // each [type, tradableAmount, currencyPair, price, timestamp, id]
     // }
 
-	// Exchanges.move(
-	//   Exchanges.exchanges("org.knowm.xchange.poloniex.PoloniexExchange"),
-	//   // Exchanges.exchanges("org.knowm.xchange.bittrex.v1.BittrexExchange"),
-	//   // new java.math.BigDecimal(0.0002)
-	//   Exchanges.exchanges("org.knowm.xchange.yobit.YoBitExchange"),
-	//   new java.math.BigDecimal(0.0003)
+  //  val poloniex = Exchanges.exchanges("org.knowm.xchange.poloniex.PoloniexExchange")
+  //  val bittrex = Exchanges.exchanges("org.knowm.xchange.bittrex.v1.BittrexExchange")
+  //  val yobit = Exchanges.exchanges("org.knowm.xchange.yobit.YoBitExchange")
+
+	// val res = Exchanges.move(
+	//   poloniex,
+	//   bittrex,
+	//   new java.math.BigDecimal(0.0009)
 	// )
 	// // ^ yobit fails
+  // println(s"res: ${res}")
 
-	// val ex = Exchanges.exchanges("org.knowm.xchange.poloniex.PoloniexExchange")
+	// val ex = poloniex
 	// Exchanges.invest(ex, new Currency("BCY"), 0.00019900)
 
-	val ex = Exchanges.exchanges("org.knowm.xchange.bittrex.v1.BittrexExchange")
-	Exchanges.invest(ex, new Currency("PKB"), 0.00011500)
+	// val ex = bittrex
+	// Exchanges.invest(ex, new Currency("PKB"), 0.00011500)
+
+  Exchanges.arb
 
   }
 

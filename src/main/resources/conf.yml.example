@@ -16,3 +16,160 @@ exchanges:
   # "org.knowm.xchange.poloniex.PoloniexExchange":
   #   apikey: ABCDEFGHIJKLMNOPQRSTUVWXYZ
   #   secret: ABCDEFGHIJKLMNOPQRSTUVWXYZ
+
+  # "org.knowm.xchange.anx.v2.ANXExchange":
+  #   apikey: ABCDEFGHIJKLMNOPQRSTUVWXYZ
+  #   secret: ABCDEFGHIJKLMNOPQRSTUVWXYZ
+  # "org.knowm.xchange.bitbay.BitbayExchange":
+  #   apikey: ABCDEFGHIJKLMNOPQRSTUVWXYZ
+  #   secret: ABCDEFGHIJKLMNOPQRSTUVWXYZ
+  # "org.knowm.xchange.bitcoinaverage.BitcoinAverageExchange":
+  #   apikey: ABCDEFGHIJKLMNOPQRSTUVWXYZ
+  #   secret: ABCDEFGHIJKLMNOPQRSTUVWXYZ
+  # "org.knowm.xchange.bitcoincharts.BitcoinChartsExchange":
+  #   apikey: ABCDEFGHIJKLMNOPQRSTUVWXYZ
+  #   secret: ABCDEFGHIJKLMNOPQRSTUVWXYZ
+  # "org.knowm.xchange.bitcoinde.BitcoindeExchange":
+  #   apikey: ABCDEFGHIJKLMNOPQRSTUVWXYZ
+  #   secret: ABCDEFGHIJKLMNOPQRSTUVWXYZ
+  # "org.knowm.xchange.bitcoinium.BitcoiniumExchange":
+  #   apikey: ABCDEFGHIJKLMNOPQRSTUVWXYZ
+  #   secret: ABCDEFGHIJKLMNOPQRSTUVWXYZ
+  # "org.knowm.xchange.bitcurex.BitcurexExchange":
+  #   apikey: ABCDEFGHIJKLMNOPQRSTUVWXYZ
+  #   secret: ABCDEFGHIJKLMNOPQRSTUVWXYZ
+  # "org.knowm.xchange.bitfinex.v1.BitfinexExchange":
+  #   apikey: ABCDEFGHIJKLMNOPQRSTUVWXYZ
+  #   secret: ABCDEFGHIJKLMNOPQRSTUVWXYZ
+  # "org.knowm.xchange.bitkonan.BitKonanExchange":
+  #   apikey: ABCDEFGHIJKLMNOPQRSTUVWXYZ
+  #   secret: ABCDEFGHIJKLMNOPQRSTUVWXYZ
+  # "org.knowm.xchange.bitmarket.BitMarketExchange":
+  #   apikey: ABCDEFGHIJKLMNOPQRSTUVWXYZ
+  #   secret: ABCDEFGHIJKLMNOPQRSTUVWXYZ
+  # "org.knowm.xchange.bitso.BitsoExchange":
+  #   apikey: ABCDEFGHIJKLMNOPQRSTUVWXYZ
+  #   secret: ABCDEFGHIJKLMNOPQRSTUVWXYZ
+  # "org.knowm.xchange.bitstamp.BitstampExchange":
+  #   apikey: ABCDEFGHIJKLMNOPQRSTUVWXYZ
+  #   secret: ABCDEFGHIJKLMNOPQRSTUVWXYZ
+  # "org.knowm.xchange.bleutrade.BleutradeExchange":
+  #   apikey: ABCDEFGHIJKLMNOPQRSTUVWXYZ
+  #   secret: ABCDEFGHIJKLMNOPQRSTUVWXYZ
+  # "org.knowm.xchange.blockchain.BlockchainExchange":
+  #   apikey: ABCDEFGHIJKLMNOPQRSTUVWXYZ
+  #   secret: ABCDEFGHIJKLMNOPQRSTUVWXYZ
+  # "org.knowm.xchange.btc38.Btc38Exchange":
+  #   apikey: ABCDEFGHIJKLMNOPQRSTUVWXYZ
+  #   secret: ABCDEFGHIJKLMNOPQRSTUVWXYZ
+  # "org.knowm.xchange.btcchina.BTCChinaExchange":
+  #   apikey: ABCDEFGHIJKLMNOPQRSTUVWXYZ
+  #   secret: ABCDEFGHIJKLMNOPQRSTUVWXYZ
+  # "org.knowm.xchange.btce.v3.BTCEExchange":
+  #   apikey: ABCDEFGHIJKLMNOPQRSTUVWXYZ
+  #   secret: ABCDEFGHIJKLMNOPQRSTUVWXYZ
+  # "org.knowm.xchange.btcmarkets.BTCMarketsExchange":
+  #   apikey: ABCDEFGHIJKLMNOPQRSTUVWXYZ
+  #   secret: ABCDEFGHIJKLMNOPQRSTUVWXYZ
+  # "org.knowm.xchange.btctrade.BTCTradeExchange":
+  #   apikey: ABCDEFGHIJKLMNOPQRSTUVWXYZ
+  #   secret: ABCDEFGHIJKLMNOPQRSTUVWXYZ
+  # "org.knowm.xchange.bter.BTERExchange":
+  #   apikey: ABCDEFGHIJKLMNOPQRSTUVWXYZ
+  #   secret: ABCDEFGHIJKLMNOPQRSTUVWXYZ
+  # "org.knowm.xchange.campbx.CampBXExchange":
+  #   apikey: ABCDEFGHIJKLMNOPQRSTUVWXYZ
+  #   secret: ABCDEFGHIJKLMNOPQRSTUVWXYZ
+  # "org.knowm.xchange.ccex.CCEXExchange":
+  #   apikey: ABCDEFGHIJKLMNOPQRSTUVWXYZ
+  #   secret: ABCDEFGHIJKLMNOPQRSTUVWXYZ
+  # "org.knowm.xchange.cexio.CexIOExchange":
+  #   apikey: ABCDEFGHIJKLMNOPQRSTUVWXYZ
+  #   secret: ABCDEFGHIJKLMNOPQRSTUVWXYZ
+  # "org.knowm.xchange.chbtc.ChbtcExchange":
+  #   apikey: ABCDEFGHIJKLMNOPQRSTUVWXYZ
+  #   secret: ABCDEFGHIJKLMNOPQRSTUVWXYZ
+  # "org.knowm.xchange.coinbase.CoinbaseExchange":
+  #   apikey: ABCDEFGHIJKLMNOPQRSTUVWXYZ
+  #   secret: ABCDEFGHIJKLMNOPQRSTUVWXYZ
+  # "org.knowm.xchange.coinmate.CoinmateExchange":
+  #   apikey: ABCDEFGHIJKLMNOPQRSTUVWXYZ
+  #   secret: ABCDEFGHIJKLMNOPQRSTUVWXYZ
+  # "org.knowm.xchange.cryptofacilities.CryptoFacilitiesExchange":
+  #   apikey: ABCDEFGHIJKLMNOPQRSTUVWXYZ
+  #   secret: ABCDEFGHIJKLMNOPQRSTUVWXYZ
+  # "org.knowm.xchange.cryptonit.v2.CryptonitExchange":
+  #   apikey: ABCDEFGHIJKLMNOPQRSTUVWXYZ
+  #   secret: ABCDEFGHIJKLMNOPQRSTUVWXYZ
+  # "org.knowm.xchange.empoex.EmpoExExchange":
+  #   apikey: ABCDEFGHIJKLMNOPQRSTUVWXYZ
+  #   secret: ABCDEFGHIJKLMNOPQRSTUVWXYZ
+  # "org.knowm.xchange.gatecoin.GatecoinExchange":
+  #   apikey: ABCDEFGHIJKLMNOPQRSTUVWXYZ
+  #   secret: ABCDEFGHIJKLMNOPQRSTUVWXYZ
+  # "org.knowm.xchange.gdax.GDAXExchange":
+  #   apikey: ABCDEFGHIJKLMNOPQRSTUVWXYZ
+  #   secret: ABCDEFGHIJKLMNOPQRSTUVWXYZ
+  # #"org.knowm.xchange.gemini.v1.GeminiExchange":
+  # #  apikey: ABCDEFGHIJKLMNOPQRSTUVWXYZ
+  # #  secret: ABCDEFGHIJKLMNOPQRSTUVWXYZ
+  # "org.knowm.xchange.hitbtc.HitbtcExchange":
+  #   apikey: ABCDEFGHIJKLMNOPQRSTUVWXYZ
+  #   secret: ABCDEFGHIJKLMNOPQRSTUVWXYZ
+  # "org.knowm.xchange.huobi.HuobiExchange":
+  #   apikey: ABCDEFGHIJKLMNOPQRSTUVWXYZ
+  #   secret: ABCDEFGHIJKLMNOPQRSTUVWXYZ
+  # "org.knowm.xchange.independentreserve.IndependentReserveExchange":
+  #   apikey: ABCDEFGHIJKLMNOPQRSTUVWXYZ
+  #   secret: ABCDEFGHIJKLMNOPQRSTUVWXYZ
+  # "org.knowm.xchange.itbit.v1.ItBitExchange":
+  #   apikey: ABCDEFGHIJKLMNOPQRSTUVWXYZ
+  #   secret: ABCDEFGHIJKLMNOPQRSTUVWXYZ
+  # "org.knowm.xchange.jubi.JubiExchange":
+  #   apikey: ABCDEFGHIJKLMNOPQRSTUVWXYZ
+  #   secret: ABCDEFGHIJKLMNOPQRSTUVWXYZ
+  # "org.knowm.xchange.kraken.KrakenExchange":
+  #   apikey: ABCDEFGHIJKLMNOPQRSTUVWXYZ
+  #   secret: ABCDEFGHIJKLMNOPQRSTUVWXYZ
+  # "org.knowm.xchange.lakebtc.LakeBTCExchange":
+  #   apikey: ABCDEFGHIJKLMNOPQRSTUVWXYZ
+  #   secret: ABCDEFGHIJKLMNOPQRSTUVWXYZ
+  # "org.knowm.xchange.livecoin.LivecoinExchange":
+  #   apikey: ABCDEFGHIJKLMNOPQRSTUVWXYZ
+  #   secret: ABCDEFGHIJKLMNOPQRSTUVWXYZ
+  # "org.knowm.xchange.loyalbit.LoyalbitExchange":
+  #   apikey: ABCDEFGHIJKLMNOPQRSTUVWXYZ
+  #   secret: ABCDEFGHIJKLMNOPQRSTUVWXYZ
+  # "org.knowm.xchange.mercadobitcoin.MercadoBitcoinExchange":
+  #   apikey: ABCDEFGHIJKLMNOPQRSTUVWXYZ
+  #   secret: ABCDEFGHIJKLMNOPQRSTUVWXYZ
+  # "org.knowm.xchange.oer.OERExchange":
+  #   apikey: ABCDEFGHIJKLMNOPQRSTUVWXYZ
+  #   secret: ABCDEFGHIJKLMNOPQRSTUVWXYZ
+  # "org.knowm.xchange.okcoin.OkCoinExchange":
+  #   apikey: ABCDEFGHIJKLMNOPQRSTUVWXYZ
+  #   secret: ABCDEFGHIJKLMNOPQRSTUVWXYZ
+  # "org.knowm.xchange.paymium.PaymiumExchange":
+  #   apikey: ABCDEFGHIJKLMNOPQRSTUVWXYZ
+  #   secret: ABCDEFGHIJKLMNOPQRSTUVWXYZ
+  # #"org.knowm.xchange.quadrigacx.QuadrigaCxExchange":
+  # #  apikey: ABCDEFGHIJKLMNOPQRSTUVWXYZ
+  # #  secret: ABCDEFGHIJKLMNOPQRSTUVWXYZ
+  # "org.knowm.xchange.quoine.QuoineExchange":
+  #   apikey: ABCDEFGHIJKLMNOPQRSTUVWXYZ
+  #   secret: ABCDEFGHIJKLMNOPQRSTUVWXYZ
+  # "org.knowm.xchange.ripple.RippleExchange":
+  #   apikey: ABCDEFGHIJKLMNOPQRSTUVWXYZ
+  #   secret: ABCDEFGHIJKLMNOPQRSTUVWXYZ
+  # "org.knowm.xchange.taurus.TaurusExchange":
+  #   apikey: ABCDEFGHIJKLMNOPQRSTUVWXYZ
+  #   secret: ABCDEFGHIJKLMNOPQRSTUVWXYZ
+  # "org.knowm.xchange.therock.TheRockExchange":
+  #   apikey: ABCDEFGHIJKLMNOPQRSTUVWXYZ
+  #   secret: ABCDEFGHIJKLMNOPQRSTUVWXYZ
+  # #"org.knowm.xchange.vaultoro.VaultoroExchange":
+  # #  apikey: ABCDEFGHIJKLMNOPQRSTUVWXYZ
+  # #  secret: ABCDEFGHIJKLMNOPQRSTUVWXYZ
+  # "org.knowm.xchange.vircurex.VircurexExchange":
+  #   apikey: ABCDEFGHIJKLMNOPQRSTUVWXYZ
+  #   secret: ABCDEFGHIJKLMNOPQRSTUVWXYZ
