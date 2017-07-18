@@ -5,7 +5,7 @@
 ```sh
 sbt run
 sbt "run-main trader.TestXchange" | tee -a output.log
-sbt "run-main trader.CpingScraper" | tee -a output.log
+sbt "run-main trader.FollowPings" | tee -a output.log
 sbt "run-main trader.ScrapeHistory" | tee -a output.log
 # check deps
 sbt dependency-graph

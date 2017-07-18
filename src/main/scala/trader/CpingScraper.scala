@@ -94,20 +94,6 @@ object CpingScraper {
   // state
   val pingSet = collection.mutable.Set.empty[Ping]
 
-  def main(args: Array[String]): Unit = {
-    // checkHistory
-    val exchanges = new Exchanges(List(
-      "org.knowm.xchange.bittrex.v1.BittrexExchange",
-      // "org.knowm.xchange.yobit.YoBitExchange",
-      // "org.knowm.xchange.poloniex.PoloniexExchange",
-    ))
-    // println(s"exchanges: ${exchanges.exchanges}")
-    // println(s"exchange coins: ${exchanges.coins}")
-    val cancelable = system.scheduler.schedule(0 seconds, My.conf.pingInterval seconds) {
-      scrapeCPing(exchanges)
-    }
-  }
-
   def scrapeCPing(exchanges: Exchanges): Unit = {
     val doc = fetchCPingHtml(cPingList)
     val pings: List[Ping] = (doc >> elementList("tr"))

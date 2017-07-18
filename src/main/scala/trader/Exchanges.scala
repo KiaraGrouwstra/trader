@@ -343,13 +343,6 @@ class Exchanges(var whitelist: List[String] = Nil) extends LazyLogging {
     (exc, mut)
   }).toMap
 
-  val cancelable = system.scheduler.schedule(0 seconds, My.conf.priceInterval seconds) {
-    // println(s"coins: $coins")
-    coins.par.foreach(checkCoin)
-    // println(s"watchedOrders: $watchedOrders")
-    watchedOrders.toList.par.foreach(watchOrders) // Function.tupled(f)
-  }
-
   // use <btcVal> to buy <coin> in <val>
   def buy(pair: CurrencyPair) = transact(orderKind(true, isFlipped(pair)), pair) _
 
