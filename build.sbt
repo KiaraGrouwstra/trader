@@ -17,7 +17,7 @@ Seq("actor" /*, "testkit", "stream", "persistence",
 .map(s => "com.typesafe.akka" %% s"akka-$s" % "2.4.19") ++ // 2.5.3
 // Seq("core") // , "macro", "law"
 // .map(s => "com.github.julien-truffaut" %% s"monocle-$s" % "1.4.0") ++
-Seq("core") // , "examples"
+Seq("core", "examples")
 .map(s => "org.knowm.xchange" % s"xchange-$s" % "4.2.0") ++
 Seq(
   "commons-io" % "commons-io" % "2.5",
