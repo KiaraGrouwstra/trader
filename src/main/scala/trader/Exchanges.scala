@@ -245,13 +245,13 @@ object Exchanges extends LazyLogging {
     .volume(t.getVolume)
     // flipped
     .currencyPair(invertPair(t.getCurrencyPair))
-    .vwap(one / t.getVwap)
-    .last(one / t.getLast)
+    .vwap(if (t.getVwap == null) null else one / t.getVwap)
+    .last(if (t.getLast == null) null else one / t.getLast)
     // also metric flipped
-    .ask(one / t.getBid)
-    .bid(one / t.getAsk)
-    .high(one / t.getLow)
-    .low(one / t.getHigh)
+    .ask(if (t.getBid == null) null else one / t.getBid)
+    .bid(if (t.getAsk == null) null else one / t.getAsk)
+    .high(if (t.getLow == null) null else one / t.getLow)
+    .low(if (t.getHigh == null) null else one / t.getHigh)
     .build
   }
 
