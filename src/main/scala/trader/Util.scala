@@ -19,7 +19,7 @@ object Util {
 
   implicit val system = ActorSystem()
   implicit val materializer = ActorMaterializer()
-  // implicit val executionContext = system.dispatchers.lookup("my-dispatcher")
+  // implicit val ec = system.dispatchers.lookup("my-dispatcher")
 
   // def jsonAs[T](json: Json): T = {
   //   val // derived: Lazy[DerivedDecoder[T]] = DerivedDecoder.deriveDecoder[T, R]
@@ -40,13 +40,15 @@ object Util {
   }
 
   def yamlFile(file: String): Either[ParsingFailure, Json] = {
-    val fPath = getClass.getClassLoader.getResource(file).getPath
-    val yaml = Source.fromFile(fPath).mkString
+    val inputStream = getClass.getClassLoader.getResourceAsStream(file)
+    // val yaml = Source.fromFile(getStream(file)).mkString
+    val utf8 = java.nio.charset.StandardCharsets.UTF_8
+    val yaml = org.apache.commons.io.IOUtils.toString(inputStream, utf8)
     parser.parse(yaml)
   }
 
   def kestrel[A](x: A)(f: A => Unit): A = { f(x); x } // tap
-  def log[A](x: A) = kestrel(x)(println)
+  def log[A](x: A) = kestrel(x)(y => println(y.toString))
   def log[A](s: String, x: A) = kestrel(x){ y => println(s"$s: $y") }
 
   // Returning T, throwing the exception on failure

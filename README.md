@@ -1,12 +1,22 @@
 # Usage
 
 - make `.yml` files from the `.example` files in `src/main/resources`
-- `sbt run`
-
-# Testing XChange
-
-- `mvn '-DfailIfNoTests=false' '-DskipIntegrationTests=false' test`
-- `mvn '-DfailIfNoTests=false' '-Dtest=org.knowm.xchange.examples.yobit.*' '-DskipIntegrationTests=false' test`
+- run:
+```sh
+sbt run
+sbt "run-main trader.TestXchange" | tee -a output.log
+sbt "run-main trader.CpingScraper" | tee -a output.log
+sbt "run-main trader.ScrapeHistory" | tee -a output.log
+# check deps
+sbt dependency-graph
+# make jar
+sbt assembly
+# run jar
+java -jar ./target/scala-2.12/Trader-*.jar
+# testing XChange
+mvn '-DfailIfNoTests=false' '-DskipIntegrationTests=false' test
+mvn '-DfailIfNoTests=false' '-Dtest=org.knowm.xchange.examples.yobit.*' '-DskipIntegrationTests=false' test
+```
 
 # TODO
 

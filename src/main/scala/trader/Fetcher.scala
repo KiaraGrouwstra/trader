@@ -1,6 +1,7 @@
 package trader
 
 import trader._
+import trader.Util._
 import scala.util._
 import scala.collection._
 import net.ruippeixotog.scalascraper.browser.JsoupBrowser._
@@ -34,7 +35,7 @@ object Fetcher {
 
   implicit def url2req(url: String) = HttpRequest(uri = url)
 
-  def fetchEntity(req: HttpRequest): Try[HttpEntity] = Util.retryInc {
+  def fetchEntity(req: HttpRequest): Try[HttpEntity] = retryInc {
   	val newReq = cookies.isEmpty match {
   		case true => req
   		case false =>
@@ -42,10 +43,10 @@ object Fetcher {
   			req.withHeaders(header)
   	}
   	// .map(HttpCookiePair.apply _)
-    println(s"newReq ${newReq}")
+    // println(s"newReq ${newReq}")
   	val fut = Http().singleRequest(newReq)
     val resp: HttpResponse = Await.result(fut, maxAwait)
-    println(s"resp ${resp}")
+    // println(s"resp ${resp}")
     // resp.header[`Set-Cookie`]
     cookies ++= resp.headers
     .filter(_.isInstanceOf[`Set-Cookie`])
@@ -64,7 +65,7 @@ object Fetcher {
       case (code: StatusCode) if code.isRedirection => fetchEntity(resp.header[Location].get.uri.toString)
       case (code: StatusCode) if code.isSuccess =>
       	val futEnt = resp.entity.toStrict(maxAwait)
-        println(s"futEnt ${futEnt}")
+        // println(s"futEnt ${futEnt}")
       	Success(Await.result(futEnt, maxAwait))
       case (code: StatusCode) if code.isFailure => Failure(new Exception(s"http error: $code"))
       case ex => Failure(new Exception(s"error: $ex"))

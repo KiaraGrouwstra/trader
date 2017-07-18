@@ -2,6 +2,7 @@ package trader
 
 import scala.collection.JavaConverters._
 import trader._
+import trader.Util._
 import org.knowm.xchange._
 import org.knowm.xchange.currency._
 import org.knowm.xchange.dto._
@@ -50,7 +51,7 @@ object TestXchange {
     // val ser = exc.getAccountService
     // println(s"ser: $ser")
     // // null for Yobit
-    // if (ser != null) Util.retryInc {
+    // if (ser != null) retryInc {
     //   // v this may fail
     //   val acc = ser.getAccountInfo
     //   // println(s"acc: $acc")
@@ -66,7 +67,7 @@ object TestXchange {
     // val pair = new CurrencyPair(Currency.ETH, Currency.BTC)
     // println(s"pair: $pair")
     // // v non-existing pairs: org.knowm.xchange.exceptions.ExchangeException: INVALID_MARKET
-    // Util.retryInc {
+    // retryInc {
     //   val market = exc.getMarketDataService
     //   println(s"market: $market")
     //   val orderBook: OrderBook = market.getOrderBook(pair)
