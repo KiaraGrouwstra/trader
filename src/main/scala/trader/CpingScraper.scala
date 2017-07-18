@@ -103,7 +103,7 @@ object CpingScraper {
     ))
     // println(s"exchanges: ${exchanges.exchanges}")
     // println(s"exchange coins: ${exchanges.coins}")
-    val cancelable = system.scheduler.schedule(0 seconds, My.fetchInterval) {
+    val cancelable = system.scheduler.schedule(0 seconds, My.conf.pingInterval seconds) {
       scrapeCPing(exchanges)
     }
   }
@@ -113,10 +113,9 @@ object CpingScraper {
     val pings: List[Ping] = (doc >> elementList("tr"))
       .drop(1)
       .dropRight(1)
-      .take(My.maxPings) // ditch
       .map(parsePing)
       .reverse
-    val minAge = System.currentTimeMillis - My.maxAge.toMillis
+    val minAge = System.currentTimeMillis - (My.conf.maxAge minutes).toMillis
     val newPings = pings
     .filter((ping: Ping) => {
       // println(s"ping date: ${cpFormat.format(ping.date)}")

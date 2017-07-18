@@ -51,21 +51,19 @@ object Exchanges extends LazyLogging {
   // constants
   val zero: Big = new java.math.BigDecimal(0.0)
   val one: Big = new java.math.BigDecimal(1.0)
-  val checkInterval = 1 minute
   val fiat = List("AED", "AFN", "ALL", "AMD", "ANG", "AOA", "ARS", "AUD", "AWG", "AZN", "BAM", "BBD", "BDT", "BGN", "BHD", "BIF", "BMD", "BND", "BOB", "BOV", "BRL", "BSD", "BTN", "BWP", "BYN", "BZD", "CAD", "CDF", "CHE", "CHF", "CHW", "CLF", "CLP", "CNY", "COP", "COU", "CRC", "CUC", "CUP", "CVE", "CZK", "DJF", "DKK", "DOP", "DZD", "EGP", "ERN", "ETB", "EUR", "FJD", "FKP", "GBP", "GEL", "GHS", "GIP", "GMD", "GNF", "GTQ", "GYD", "HKD", "HNL", "HRK", "HTG", "HUF", "IDR", "ILS", "INR", "IQD", "IRR", "ISK", "JMD", "JOD", "JPY", "KES", "KGS", "KHR", "KMF", "KPW", "KRW", "KWD", "KYD", "KZT", "LAK", "LBP", "LKR", "LRD", "LSL", "LYD", "MAD", "MDL", "MGA", "MKD", "MMK", "MNT", "MOP", "MRO", "MUR", "MVR", "MWK", "MXN", "MXV", "MYR", "MZN", "NAD", "NGN", "NIO", "NOK", "NPR", "NZD", "OMR", "PAB", "PEN", "PGK", "PHP", "PKR", "PLN", "PYG", "QAR", "RON", "RSD", "RUB", "RWF", "SAR", "SBD", "SCR", "SDG", "SEK", "SGD", "SHP", "SLL", "SOS", "SRD", "SSP", "STD", "SVC", "SYP", "SZL", "THB", "TJS", "TMT", "TND", "TOP", "TRY", "TTD", "TWD", "TZS", "UAH", "UGX", "USD", "USN", "UYI", "UYU", "UZS", "VEF", "VND", "VUV", "WST", "XAF", "XAG", "XAU", "XBA", "XBB", "XBC", "XBD", "XCD", "XDR", "XOF", "XPD", "XPF", "XPT", "XSU", "XTS", "XUA", "XXX", "YER", "ZAR", "ZMW", "ZWL").map(x => new Currency(x)).toSet
   def isCrypto(coin: Currency): Boolean = !fiat.contains(coin)
   val rounded = new java.math.MathContext(7) // big(rounded)
 
-  def failsExpectations(xys: List[(Long, Big)])(expectation: (Double, FiniteDuration)) = {
-    val (limit, duration) = expectation
+  def failsExpectations(xys: List[(Long, Big)])(expectation: My.TimeRule) = {
     val now = xys.last._1
-    val idx = xys.indexWhere(_._1 < now - duration.toMillis)
+    val idx = xys.indexWhere(_._1 < now - (expectation.mins minutes).toMillis)
     idx match {
       case -1 => false // period not yet reached
       case _ =>
         // println(s"expectation: ${expectation}")
         val (_times, prcs): (List[Long], List[Big]) = xys.drop(idx).unzip
-        val failed = prcs.last < limit * prcs.head // TODO: linalg
+        val failed = prcs.last < expectation.rate * prcs.head // TODO: linalg
         // ^ pair flip agnostic?
         if (failed) {
           // println(s"datapoints: ${xys}")
@@ -98,14 +96,14 @@ object Exchanges extends LazyLogging {
       val price = ticker.getAsk
       val ratio = price / ticker.getBid
       println(s"ratio: $ratio")
-      println(s"buyMin: ${My.buyMin}")
-      val minBuy = signal * My.buyMin
+      println(s"buyMin: ${My.conf.buyMin}")
+      val minBuy = signal * My.conf.buyMin
       // println(s"minBuy: ${minBuy}")
       if (price < minBuy) {
         s"price dropped from $signal to $price (minBuy ${minBuy}), ignore"
-      } else if (ticker.getVolume < My.minVolume) {
+      } else if (ticker.getVolume < My.conf.minVolume) {
         s"volume ${ticker.getVolume} too low, ignore"
-      } else if (ratio > My.allowedGap) {
+      } else if (ratio > My.conf.allowedGap) {
         s"bid/ask ratio too big (${ratio}), ignore"
       } else null
   })
@@ -345,7 +343,7 @@ class Exchanges(var whitelist: List[String] = Nil) extends LazyLogging {
     (exc, mut)
   }).toMap
 
-  val cancelable = system.scheduler.schedule(0 seconds, checkInterval) {
+  val cancelable = system.scheduler.schedule(0 seconds, My.conf.priceInterval seconds) {
     // println(s"coins: $coins")
     coins.par.foreach(checkCoin)
     // println(s"watchedOrders: $watchedOrders")
@@ -483,9 +481,9 @@ class Exchanges(var whitelist: List[String] = Nil) extends LazyLogging {
     // - below buying point (5s)
     val belowBuy = prices.last < prices.head
     // - if lost n% compared to max since buy (5s)
-    val underPeak = prices.last < My.maxDrop * prices.max
+    val underPeak = prices.last < My.conf.maxDrop * prices.max
     // - linear regression: if <+1%/10min
-    val underPerforming = My.timeRules.exists(failsExpectations(xys))
+    val underPerforming = My.conf.timeRules.exists(failsExpectations(xys))
     val doSell = belowBuy || underPeak || underPerforming
     if (doSell) {
       val coin = getAlt(pair)
@@ -515,7 +513,7 @@ class Exchanges(var whitelist: List[String] = Nil) extends LazyLogging {
           zero
         case Some(ticker) =>
           // println(s"ticker: $ticker")
-          ticker.getAsk * My.sellMin
+          ticker.getAsk * My.conf.sellMin
       }
       try {
         sell(pair)(exc, have, minSell)
@@ -602,11 +600,11 @@ class Exchanges(var whitelist: List[String] = Nil) extends LazyLogging {
     pingProblem(signal, tickerOption) match {
       case Some(e) => println(e)
       case None =>
-        val limit = tickerOption.map((ticker) => ticker.getAsk * My.buyMax).getOrElse(zero)
+        val limit = tickerOption.map((ticker) => ticker.getAsk * My.conf.buyMax).getOrElse(zero)
         // tickerOption.foreach((ticker) => println(s"ticker: $ticker"))
         // ^ zero makes a market order if no BID info
         println(s"BUY (signal ${signal}, limit ${limit.doubleValue})")
-        val need = My.investment
+        val need = My.conf.investment
         val btcVal: Big = accInfo(exc).map(_.getWallet
           .getBalance(Currency.BTC).getAvailable) match {
           case Success(haveBTC) =>
