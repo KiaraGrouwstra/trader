@@ -111,7 +111,12 @@ object CpingScraper {
     pingSet ++= newPings
     newPings.par.foreach((ping: Ping) => {
       println(s"ping: $ping")
-      crypto2xchange(ping.exchange).flatMap((s: String) => Option(exchanges.exchanges(s))) match {
+      crypto2xchange(ping.exchange)
+      .flatMap((s: String) => try {
+        Some(exchanges.exchanges(s))
+      } catch {
+        case ex: java.util.NoSuchElementException => None
+      }) match {
         case None => println(s"skipping exchange ${ping.exchange}")
         case Some(exc) => exchanges.invest(exc, new Currency(ping.coin), ping.valSig)
       }
@@ -240,7 +245,8 @@ object CpingScraper {
     val tdExchange = tds.last
     val statTds = tds.drop(2).dropRight(1)
     // ^ current: 1h, 6h, 24h; history: also 48h, 7d
-    val coin = tdCoin >> text("td")
+    val coin = tdCoin.>>(text("td"))
+      .filter((c: Char) => c.toInt < 256).trim // filter out 📊
     val exchange = tdExchange >> text("td")
     val (valSig, date) = parseCell(tdSignal)
     val time = cpFormat.parse(date).getTime

@@ -245,14 +245,20 @@ object Exchanges extends LazyLogging {
     .volume(t.getVolume)
     // flipped
     .currencyPair(invertPair(t.getCurrencyPair))
-    .vwap(if (t.getVwap == null) null else one / t.getVwap)
-    .last(if (t.getLast == null) null else one / t.getLast)
+    .vwap(flipNum(t.getVwap))
+    .last(flipNum(t.getLast))
     // also metric flipped
-    .ask(if (t.getBid == null) null else one / t.getBid)
-    .bid(if (t.getAsk == null) null else one / t.getAsk)
-    .high(if (t.getLow == null) null else one / t.getLow)
-    .low(if (t.getHigh == null) null else one / t.getHigh)
+    .ask(flipNum(t.getBid))
+    .bid(flipNum(t.getAsk))
+    .high(flipNum(t.getLow))
+    .low(flipNum(t.getHigh))
     .build
+  }
+
+  def flipNum(n: java.math.BigDecimal) = n match {
+    case null => null
+    case zero => null
+    case _ => one / n
   }
 
   def accInfo(exc: MyExchange): Try[AccountInfo] = {
@@ -388,7 +394,15 @@ class Exchanges(var whitelist: List[String] = Nil) extends LazyLogging {
     // val excPairTickers: Map[MyExchange, Map[CurrencyPair, Ticker]]
     val excPairTickers: List[(MyExchange, List[(CurrencyPair, Ticker)])]
     = exchanges.values.toList.map((exc: MyExchange) => {
-      val pairs = exc.getExchangeSymbols.asScala.toList
+      println(s"exc: $exc")
+      val pairs = try {
+        exc.getExchangeSymbols.asScala.toList
+      } catch {
+        case ex: java.lang.NullPointerException => {
+          println(s"failed to get pairs for exchange ${exc}!")
+          Nil
+        }
+      }
       println(s"pairs: $pairs")
       val market = exc.getMarketDataService
       println(s"market: $market")
@@ -516,6 +530,11 @@ class Exchanges(var whitelist: List[String] = Nil) extends LazyLogging {
       } catch {
         case ex: ExchangeException =>
           println(s"ex: $ex")
+          // stop watching for permanent errors
+          ex.getMessage match {
+            case "DUST_TRADE_DISALLOWED_MIN_VALUE_50K_SAT" =>
+              coins -= ((pair, exc))
+          }
       }
     } else {
       println(s"keep")
