@@ -38,7 +38,9 @@ object TestXchange {
       // issues: null for AccountService and Ticker
 
   def main(args: Array[String]): Unit = {
-    // val exc = Exchanges.exchanges(key)
+    val exchanges = new Exchanges()
+
+    // val exc = exchanges.exchanges(key)
     // println(s"exc: $exc")
 
     // val pairs = exc.getExchangeMetaData.getCurrencyPairs
@@ -81,25 +83,25 @@ object TestXchange {
     //   // each [type, tradableAmount, currencyPair, price, timestamp, id]
     // }
 
-  //  val poloniex = Exchanges.exchanges("org.knowm.xchange.poloniex.PoloniexExchange")
-  //  val bittrex = Exchanges.exchanges("org.knowm.xchange.bittrex.v1.BittrexExchange")
-  //  val yobit = Exchanges.exchanges("org.knowm.xchange.yobit.YoBitExchange")
+    //  val poloniex = exchanges.exchanges("org.knowm.xchange.poloniex.PoloniexExchange")
+    //  val bittrex = exchanges.exchanges("org.knowm.xchange.bittrex.v1.BittrexExchange")
+    //  val yobit = exchanges.exchanges("org.knowm.xchange.yobit.YoBitExchange")
 
-	// val res = Exchanges.move(
-	//   poloniex,
-	//   bittrex,
-	//   new java.math.BigDecimal(0.0009)
-	// )
-	// // ^ yobit fails
-  // println(s"res: ${res}")
+  	// val res = exchanges.move(
+  	//   poloniex,
+  	//   bittrex,
+  	//   new java.math.BigDecimal(0.0009)
+  	// )
+  	// // ^ yobit fails
+    // println(s"res: ${res}")
 
-	// val ex = poloniex
-	// Exchanges.invest(ex, new Currency("BCY"), 0.00019900)
+  	// val ex = poloniex
+  	// exchanges.invest(ex, new Currency("BCY"), 0.00019900)
 
-	// val ex = bittrex
-	// Exchanges.invest(ex, new Currency("PKB"), 0.00011500)
+  	// val ex = bittrex
+  	// exchanges.invest(ex, new Currency("PKB"), 0.00011500)
 
-  Exchanges.arb
+    exchanges.arb
 
   }
 

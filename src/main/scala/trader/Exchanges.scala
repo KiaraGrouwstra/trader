@@ -1,7 +1,9 @@
 package trader
 
 import scala.collection.JavaConverters._
+import com.typesafe.scalalogging.LazyLogging
 import trader._
+import trader.Util._
 import scala.util._
 import scala.concurrent.duration._
 import scala.concurrent.ExecutionContext.Implicits.global
@@ -21,19 +23,9 @@ import org.knowm.xchange.service.trade.params._
 import org.knowm.xchange.service.trade.params.orders._
 import org.knowm.xchange.exceptions._
 
-object Exchanges {
+object Exchanges extends LazyLogging {
 
-  // types
-  type Big = BigDecimal // java.math.BigDecimal
-  type Combo = (CurrencyPair, MyExchange)
-  type ExcTicker = (MyExchange, Ticker)
-  case class BestPairRoutes(askLow: ExcTicker, bidHigh: ExcTicker, ratio: BigDecimal)
-
-  // implicits
-  implicit def d2jBig(x: Double) = new java.math.BigDecimal(x)
-  implicit def j2sBig(x: java.math.BigDecimal) = BigDecimal(x)
-  implicit def s2jBig(x: Big) = x.bigDecimal
-  implicit def d2sBig(x: Double) = j2sBig(d2jBig(x))
+  // implicit classes
   implicit class MyExchange(val x: Exchange) {
     def original = x
     override def toString() = x.getExchangeSpecification.getExchangeName
@@ -44,6 +36,18 @@ object Exchanges {
   // MarketDataService
   // TradeService
 
+  // types
+  type Big = BigDecimal // java.math.BigDecimal
+  type Combo = (CurrencyPair, MyExchange)
+  type ExcTicker = (MyExchange, Ticker)
+  case class BestPairRoutes(askLow: ExcTicker, bidHigh: ExcTicker, ratio: BigDecimal)
+
+  // implicit conversions
+  implicit def d2jBig(x: Double) = new java.math.BigDecimal(x)
+  implicit def j2sBig(x: java.math.BigDecimal) = BigDecimal(x)
+  implicit def s2jBig(x: Big) = x.bigDecimal
+  implicit def d2sBig(x: Double) = j2sBig(d2jBig(x))
+
   // constants
   val zero: Big = new java.math.BigDecimal(0.0)
   val one: Big = new java.math.BigDecimal(1.0)
@@ -52,12 +56,240 @@ object Exchanges {
   def isCrypto(coin: Currency): Boolean = !fiat.contains(coin)
   val rounded = new java.math.MathContext(7) // big(rounded)
 
+  def failsExpectations(xys: List[(Long, Big)])(expectation: (Double, FiniteDuration)) = {
+    val (limit, duration) = expectation
+    val now = xys.last._1
+    val idx = xys.indexWhere(_._1 < now - duration.toMillis)
+    idx match {
+      case -1 => false // period not yet reached
+      case _ =>
+        // println(s"expectation: ${expectation}")
+        val (_times, prcs): (List[Long], List[Big]) = xys.drop(idx).unzip
+        val failed = prcs.last < limit * prcs.head // TODO: linalg
+        // ^ pair flip agnostic?
+        if (failed) {
+          // println(s"datapoints: ${xys}")
+          // println(s"failed for: ${xys(idx)}")
+          println(s"failed for: ${expectation}")
+        }
+        failed
+    }
+  }: Boolean
+
+  def makePair(exc: MyExchange, coin: Currency): CurrencyPair = {
+    val pairs = exc.getExchangeMetaData.getCurrencyPairs
+    val regular = new CurrencyPair(My.baseCoin, coin)
+    val reverse = new CurrencyPair(coin, My.baseCoin)
+    // Yobit normal, Bittrex/Poloniex flipped
+    val pair = if (pairs.containsKey(regular)) regular
+          else if (pairs.containsKey(reverse)) reverse
+          else throw new Exception(s"pairs for exchange ${exc} is missing a pair for ${coin.getCurrencyCode}!")
+    pair
+  }
+
+  def pingProblem(signal: Double, tickerOption: Option[Ticker]): Option[String] = Option(tickerOption match {
+    case None =>
+      // no ticker for BID reference, so market order
+      // s"no ticker for ${exc}, ignore"
+      null
+      // TODO: verify ping by % up
+    case Some(ticker) =>
+      // println(s"ticker: $ticker")
+      val price = ticker.getAsk
+      val ratio = price / ticker.getBid
+      println(s"ratio: $ratio")
+      println(s"buyMin: ${My.buyMin}")
+      val minBuy = signal * My.buyMin
+      // println(s"minBuy: ${minBuy}")
+      if (price < minBuy) {
+        s"price dropped from $signal to $price (minBuy ${minBuy}), ignore"
+      } else if (ticker.getVolume < My.minVolume) {
+        s"volume ${ticker.getVolume} too low, ignore"
+      } else if (ratio > My.allowedGap) {
+        s"bid/ask ratio too big (${ratio}), ignore"
+      } else null
+  })
+
+  def calcBuyAmnt(market: MarketDataService, pair: CurrencyPair, spendAmnt: Big): Big = {
+    val orderBook: OrderBook = market.getOrderBook(pair)
+    val orders: List[LimitOrder] = (if (isFlipped(pair))
+      orderBook.getAsks else orderBook.getBids).asScala.toList
+    // v adjust for pair order?
+    val (_left, buyAmnt) = orders.foldLeft((spendAmnt, zero))((tpl: (Big, Big), order: LimitOrder) => {
+      val (btcLeft, amntAcc) = tpl
+      isZero(btcLeft) match {
+        case true => (btcLeft, amntAcc) // shortcut
+        case _ =>
+          // println(s"btcLeft: $btcLeft")
+          // println(s"amntAcc: $amntAcc")
+          val price = order.getLimitPrice // coin in BTC
+          // println(s"price: $price")
+          val availableCoin = order.getTradableAmount
+          // println(s"availableCoin: $availableCoin")
+          val availableBtc = price * availableCoin
+          // println(s"availableBtc: $availableBtc")
+          val spendBtc = btcLeft.min(availableBtc)
+          // println(s"spendBtc: $spendBtc")
+          val coinsBuy = spendBtc / price
+          // println(s"coinsBuy: $coinsBuy")
+          (btcLeft - spendBtc, amntAcc + coinsBuy)
+      }
+    })
+    buyAmnt
+  }
+
+  def isZero(big: Big): Boolean = big == zero
+  // def isZero(big: Big): Boolean = big.doubleValue == 0.0
+
+  def move(fromExc: MyExchange, toExc: MyExchange, amnt: Big, coin: Currency = My.baseCoin) = {
+    if (!isCrypto(coin)) {
+      throw new Exception("only crypto currencies can be easily moved!")
+    }
+    val fromAcc = fromExc.getAccountService
+    println(s"fromAcc: $fromAcc")
+    val   toAcc =   toExc.getAccountService
+    println(s"toAcc: $toAcc") // yobit: fails
+    val addr = toAcc.requestDepositAddress(coin)
+    if (addr != null && addr != "") { // don't need this, right?
+      val res = fromAcc.withdrawFunds(coin, amnt, addr)
+      println(s"$res")
+      // "given the expected withdrawal fee of $fee, it should get $left..."
+    } else {
+      throw new Exception("empty address!")
+    }
+  }
+
+  def isFlipped(pair: CurrencyPair): Boolean = My.baseCoin match {
+    case pair.base => false
+    case pair.counter => true
+    case _ => throw new Exception(s"trade pair ${pair} does not include the storage coin")
+  }
+
+  def getAlt(pair: CurrencyPair): Currency = if (isFlipped(pair)) pair.base else pair.counter
+
+  def orderKind(isBuy: Boolean, isFlipped: Boolean): Order.OrderType = if (isBuy == isFlipped) Order.OrderType.BID else Order.OrderType.ASK
+
+  // calculate the expected costs (BID) / proceedings (ASK) for a trade
+  def calcTotal(trade: UserTrade, exc: MyExchange): Big = {
+    val pair = trade.getCurrencyPair
+    val feeCoin = trade.getFeeCurrency
+    val feeMult: Big = feeCoin match {
+      case pair.counter => 1.0
+      case _ =>
+        // get rate `pair.counter / trade.getFeeCurrency` at exc
+        getTicker(exc, new CurrencyPair(feeCoin, pair.counter)) match {
+          case None => {
+            println(s"no ticker for ${exc} to calc fees")
+            // TODO: use rate from another exchange
+            1.0 // dummy
+          }
+          case Some(ticker) => {
+            // println(s"ticker: $ticker")
+            ticker.getAsk // guess pessimistic
+          }
+        }
+    }
+    // trade.getTradableAmount // base
+    // * trade.getPrice // counter/base
+    // - trade.getFeeAmount * feeMult
+    trade.getTradableAmount * trade.getPrice - trade.getFeeAmount * feeMult
+  }
+
+  def makeExchange(tpl: (String, My.ApiCredential)): List[(String, MyExchange)] = {
+    val (name: String, cred: My.ApiCredential) = tpl
+    println(s"name: $name")
+    // println(s"cred: $cred")
+    val spec = new ExchangeSpecification(name)
+    spec.setApiKey(cred.apikey)
+    spec.setSecretKey(cred.secret)
+    // println(s"spec: $spec")
+    // spec.setUserName(cred.user)
+    // spec.setPassword(cred.pw)
+
+    retry(3)({
+      ExchangeFactory.INSTANCE.createExchange(spec)
+    }).map((exc: Exchange) => {
+      println(s"exchange: ${exc}")
+      (name, MyExchange(exc))
+    }).toOption.toList
+  }
+
+  def getTicker(exc: MyExchange, pair: CurrencyPair): Option[Ticker] =
+    retry(3)({
+      Option(exc.getMarketDataService.getTicker(pair)) // yobit
+      .map((t: Ticker) => t.getTimestamp match {
+        case null => tickerMaker(t)
+        .timestamp(new java.util.Date(System.currentTimeMillis))
+        .build
+        case _ => t
+      })
+    }).toOption.flatMap(identity)
+
+  def tickerMaker(t: Ticker): Ticker.Builder = {
+    new Ticker.Builder()
+    .ask(t.getAsk)
+    .bid(t.getBid)
+    .currencyPair(t.getCurrencyPair)
+    .high(t.getHigh)
+    .last(t.getLast)
+    .low(t.getLow)
+    .volume(t.getVolume)
+    .vwap(t.getVwap)
+    .timestamp(t.getTimestamp)
+  }
+
+  def invertPair(pair: CurrencyPair) = new CurrencyPair(pair.counter, pair.base)
+
+  def invertTicker(t: Ticker): Ticker = {
+    new Ticker.Builder()
+    // same
+    .timestamp(t.getTimestamp)
+    .volume(t.getVolume)
+    // flipped
+    .currencyPair(invertPair(t.getCurrencyPair))
+    .vwap(one / t.getVwap)
+    .last(one / t.getLast)
+    // also metric flipped
+    .ask(one / t.getBid)
+    .bid(one / t.getAsk)
+    .high(one / t.getLow)
+    .low(one / t.getHigh)
+    .build
+  }
+
+  def accInfo(exc: MyExchange): Try[AccountInfo] = {
+    exc.getAccountService match {
+      case null => Failure(new Exception(s"no AccountService for ${exc}"))
+      // ^ Yobit
+      case ser: AccountService => retry(3)({
+        // println(s"ser: $ser")
+        // v this may fail
+        val acc = ser.getAccountInfo
+        // println(s"acc: $acc")
+        acc
+      })
+    }
+  }
+
+}
+
+class Exchanges(var whitelist: List[String] = Nil) extends LazyLogging {
+  import Exchanges._
+
   // state
 
   // abstract state into monad to use lenses over mutation?
 
-  val exchanges: Map[String, MyExchange] =
-    My.conf.exchanges.toList.flatMap(makeExchange).toMap
+  val exchanges: Map[String, MyExchange] = My.conf.exchanges
+    .filterKeys((k: String) => if (whitelist.isEmpty) true else whitelist.contains(k))
+    .toList
+    // .map(log)
+    .map(x => {
+      println(s"x: $x")
+      x
+    })
+    .flatMap(makeExchange)
+    .toMap
 
   // val coins = mutable.Map.empty[Combo, List[Ticker]]
   // ^ also store max?
@@ -65,6 +297,7 @@ object Exchanges {
     exchanges.values.toList
     // .par // makes it not resolve...
     .flatMap((exc: MyExchange) => {
+      logger.info(s"LOGGER checking coins for ${exc}...")
       println(s"checking coins for ${exc}...")
       // val pairs = exc.getExchangeMetaData.getCurrencyPairs
       accInfo(exc).map(_.getWallet.getBalances.asScala
@@ -98,22 +331,65 @@ object Exchanges {
       case _ =>
         val params = trade.createOpenOrdersParams
         // println(s"params: $params")
-        val openOrders = Util.retryInc {
+        retry(3)({
           trade.getOpenOrders(params).getOpenOrders.asScala //.toList
+        }) match {
+          case Success(openOrders) =>
+            // ^ ignores any orders filled since script last ran
+            // println(s"openOrders: $openOrders") // no open orders
+            val ids = openOrders.map(_.getId).toSet
+            mutable.Set(ids.toSeq:_*)
+          case _ => mutable.Set.empty[String]
         }
-        // ^ ignores any orders filled since script last ran
-        // println(s"openOrders: $openOrders") // no open orders
-        val ids = openOrders.map(_.getId).toSet
-        mutable.Set(ids.toSeq:_*)
     }
     (exc, mut)
   }).toMap
 
-  val cancelable = Util.system.scheduler.schedule(0 seconds, checkInterval) {
+  val cancelable = system.scheduler.schedule(0 seconds, checkInterval) {
     // println(s"coins: $coins")
     coins.par.foreach(checkCoin)
     // println(s"watchedOrders: $watchedOrders")
     watchedOrders.toList.par.foreach(watchOrders) // Function.tupled(f)
+  }
+
+  // use <btcVal> to buy <coin> in <val>
+  def buy(pair: CurrencyPair) = transact(orderKind(true, isFlipped(pair)), pair) _
+
+  // sell all <coin> in <pair>
+  def sell(pair: CurrencyPair) = transact(orderKind(false, isFlipped(pair)), pair) _
+
+  def transact(orderType: Order.OrderType, pair: CurrencyPair)(exc: MyExchange, tradable: Big, limit: Big): Unit = {
+    // println(s"tradable: $tradable")
+    // println(s"limit: $limit")
+    val acc = exc.getAccountService
+    val pairMeta = exc.getExchangeMetaData.getCurrencyPairs.get(pair)
+    // CREDIT/BTC=CurrencyPairMetaData [tradingFee=0.2, minimumAmount=0.00010, maximumAmount=null, priceScale=8]
+    val trade: TradeService = exc.getTradeService
+    // println(s"trade: $trade")
+    val hasLimit = !isZero(limit)
+    // retryInc { // TODO: ensure a failing action after creation can't make new trade
+      // try {
+        val orderId: String = if (hasLimit) {
+          val order = new LimitOrder.Builder(orderType, pair)
+            .limitPrice(limit)
+            .tradableAmount(tradable).build
+          // println(s"limit order: $order")
+          println(s"$orderType $pair $tradable ($exc) @ limit ${limit(rounded)}")
+          trade.placeLimitOrder(order)
+        } else {
+          val order = new MarketOrder.Builder(orderType, pair)
+            .tradableAmount(tradable).build
+          // println(s"market order: $order")
+          println(s"$orderType $pair $tradable ($exc) @ market rate")
+          trade.placeMarketOrder(order)
+        }
+        println(s"orderId: $orderId")
+        watchedOrders(exc) += orderId
+      // } catch {
+      //   case ex: ExchangeException =>
+      //     println(s"ex: $ex")
+      // }
+    // }
   }
 
   def arb(): Unit = {
@@ -125,8 +401,8 @@ object Exchanges {
       println(s"pairs: $pairs")
       val market = exc.getMarketDataService
       println(s"market: $market")
-      val pairTickers: List[(CurrencyPair, Ticker)] = pairs.map((pair: CurrencyPair) => {
-        val ticker = Util.retryInc {
+      val pairTickers: List[(CurrencyPair, Ticker)] = pairs.flatMap((pair: CurrencyPair) => {
+        retry(3)({
           val t = market.getTicker(pair)
           // Option(t) // yobit
           // .map((t: Ticker) => 
@@ -137,8 +413,7 @@ object Exchanges {
             case _ => t
           }
           // )
-        }
-        (pair, ticker)
+        }).toOption.map((ticker: Ticker) => (pair, ticker)).toList
       })
       println(s"pairTickers: $pairTickers")
       val inverted = pairTickers.map(tpl => {
@@ -253,62 +528,71 @@ object Exchanges {
       }
     } else {
       println(s"keep")
+      logger.info(s"LOGGER keep")
     }
   }
 
-  def failsExpectations(xys: List[(Long, Big)])(expectation: (Double, FiniteDuration)) = {
-    val (limit, duration) = expectation
-    val now = xys.last._1
-    val idx = xys.indexWhere(_._1 < now - duration.toMillis)
-    idx match {
-      case -1 => false // period not yet reached
-      case _ =>
-        // println(s"expectation: ${expectation}")
-        val (_times, prcs): (List[Long], List[Big]) = xys.drop(idx).unzip
-        val failed = prcs.last < limit * prcs.head // TODO: linalg
-        // ^ pair flip agnostic?
-        if (failed) {
-          // println(s"datapoints: ${xys}")
-          // println(s"failed for: ${xys(idx)}")
-          println(s"failed for: ${expectation}")
-        }
-        failed
-    }
-  }: Boolean
+  def watchOrders(tpl: (MyExchange, mutable.Set[String])): Unit = {
+    val (exc, orderIds) = tpl
+    // println(s"watchedOrders(${exc}): ${watchedOrders(exc)}")
+    val trade: TradeService = exc.getTradeService
+    if (!orderIds.isEmpty && trade != null) {
+      try {
+        val orderColl: java.util.Collection[Order] =
+          trade.getOrder(orderIds.toSeq:_*)
+        val orders = orderColl.toArray.toList.asInstanceOf[List[Order]]
+        println(s"orders: $orders")
+        orders.par.foreach((order: Order) => {
+          println(s"status: ${order.getStatus}")
+          order.getStatus match {
+            case Order.OrderStatus.FILLED => handleFilledOrder(order, exc)
+            case status => handleUnfilled(order, exc)
+          }
+        })
+      } catch {
+        case not: NotYetImplementedForExchangeException =>
+          // println(s"can't get orders for ${exc}")
+          // ^ Bittrex... need a way to throw this no more than once
 
-  def makePair(exc: MyExchange, coin: Currency): CurrencyPair = {
-    val pairs = exc.getExchangeMetaData.getCurrencyPairs
-    val regular = new CurrencyPair(My.baseCoin, coin)
-    val reverse = new CurrencyPair(coin, My.baseCoin)
-    // Yobit normal, Bittrex/Poloniex flipped
-    val pair = if (pairs.containsKey(regular)) regular
-          else if (pairs.containsKey(reverse)) reverse
-          else throw new Exception(s"pairs for exchange ${exc} is missing a pair for ${coin.getCurrencyCode}!")
-    pair
+          // check open orders
+          retry(3)({
+            trade.getOpenOrders(trade.createOpenOrdersParams)
+          }).map((openOrders: OpenOrders) => {
+            val orders: List[LimitOrder] = openOrders.getOpenOrders.asScala.toList
+            println(s"orders: $orders")
+            val askedOrders = orders.filter((order: LimitOrder) => orderIds.contains(order.getId))
+            println(s"askedOrders: $askedOrders")
+            askedOrders.par.foreach((order: LimitOrder) => {
+              println(s"status: ${order.getStatus}")
+              handleUnfilled(order, exc)
+            })
+          })
+
+          // check completed trades
+          retry(3)({
+            trade.getTradeHistory(trade.createTradeHistoryParams)
+          }).map((userTrades: UserTrades) => {
+            val trades: List[UserTrade] = userTrades.getUserTrades.asScala.toList
+            println(s"trades: $trades")
+            val askedTrades = trades
+              .filter((trade: UserTrade) => orderIds.contains(trade.getOrderId))
+            println(s"askedTrades: $askedTrades")
+            askedTrades.par.foreach((trade: UserTrade) => {
+              handleFilledTrade(trade, exc)
+            })
+          })
+
+      }
+    }
   }
 
-  def pingProblem(signal: Double, tickerOption: Option[Ticker]): Option[String] = Option(tickerOption match {
-    case None =>
-      // no ticker for BID reference, so market order
-      // s"no ticker for ${exc}, ignore"
-      null
-      // TODO: verify ping by % up
-    case Some(ticker) =>
-      // println(s"ticker: $ticker")
-      val price = ticker.getAsk
-      val ratio = price / ticker.getBid
-      println(s"ratio: $ratio")
-      println(s"buyMin: ${My.buyMin}")
-      val minBuy = signal * My.buyMin
-      // println(s"minBuy: ${minBuy}")
-      if (price < minBuy) {
-        s"price dropped from $signal to $price (minBuy ${minBuy}), ignore"
-      } else if (ticker.getVolume < My.minVolume) {
-        s"volume ${ticker.getVolume} too low, ignore"
-      } else if (ratio > My.allowedGap) {
-        s"bid/ask ratio too big (${ratio}), ignore"
-      } else null
-  })
+  def handleUnfilled(order: Order, exc: MyExchange): Unit = {
+    println(s"unfilled: $order")
+    // println(s"status: $status")
+    // // TODO: cancel if the market moved and we no longer expect it to fill / be profitable
+    // val canceled: boolean = trade.cancelOrder(order.id)
+    // println(s"canceled: $canceled")
+  }
 
   def invest(exc: MyExchange, coin: Currency, signal: Double): Unit = {
     println(s"PING $coin $exc $signal")
@@ -336,11 +620,11 @@ object Exchanges {
             need
         }
         val market = exc.getMarketDataService
-        Util.retryInc {
-          val buyAmnt = if (isFlipped(pair))
-            calcBuyAmnt(market, pair, btcVal)
-            else btcVal
-          println(s"buyAmnt: $buyAmnt")
+        val buyAmnt = if (isFlipped(pair))
+          calcBuyAmnt(market, pair, btcVal)
+          else btcVal
+        println(s"buyAmnt: $buyAmnt")
+        // retryInc {
           try {
             buy(pair)(exc, buyAmnt, limit)
             val tpl = (pair, exc)
@@ -353,166 +637,8 @@ object Exchanges {
             case ex: ExchangeException =>
               println(s"ex: $ex")
           }
-        }
+        // }
     }
-  }
-
-  def calcBuyAmnt(market: MarketDataService, pair: CurrencyPair, spendAmnt: Big): Big = {
-    val orderBook: OrderBook = market.getOrderBook(pair)
-    val orders: List[LimitOrder] = (if (isFlipped(pair)) orderBook.getAsks else orderBook.getBids).asScala.toList
-    // v adjust for pair order?
-    val (_left, buyAmnt) = orders.foldLeft((spendAmnt, zero))((tpl: (Big, Big), order: LimitOrder) => {
-      val (btcLeft, amntAcc) = tpl
-      isZero(btcLeft) match {
-        case true => (btcLeft, amntAcc) // shortcut
-        case _ =>
-          // println(s"btcLeft: $btcLeft")
-          // println(s"amntAcc: $amntAcc")
-          val price = order.getLimitPrice // coin in BTC
-          // println(s"price: $price")
-          val availableCoin = order.getTradableAmount
-          // println(s"availableCoin: $availableCoin")
-          val availableBtc = price * availableCoin
-          // println(s"availableBtc: $availableBtc")
-          val spendBtc = btcLeft.min(availableBtc)
-          // println(s"spendBtc: $spendBtc")
-          val coinsBuy = spendBtc / price
-          // println(s"coinsBuy: $coinsBuy")
-          (btcLeft - spendBtc, amntAcc + coinsBuy)
-      }
-    })
-    buyAmnt
-  }
-
-  def isZero(big: Big): Boolean = big == zero
-  // def isZero(big: Big): Boolean = big.doubleValue == 0.0
-
-  def move(fromExc: MyExchange, toExc: MyExchange, amnt: Big, coin: Currency = My.baseCoin) = {
-    if (!isCrypto(coin)) {
-      throw new Exception("only crypto currencies can be easily moved!")
-    }
-    val fromAcc = fromExc.getAccountService
-    println(s"fromAcc: $fromAcc")
-    val   toAcc =   toExc.getAccountService
-    println(s"toAcc: $toAcc") // yobit: fails
-    val addr = toAcc.requestDepositAddress(coin)
-    if (addr != null && addr != "") { // don't need this, right?
-      val res = fromAcc.withdrawFunds(coin, amnt, addr)
-      println(s"$res")
-      // "given the expected withdrawal fee of $fee, it should get $left..."
-    } else {
-      throw new Exception("empty address!")
-    }
-  }
-
-  // use <btcVal> to buy <coin> in <val>
-  def buy(pair: CurrencyPair) = transact(orderKind(true, isFlipped(pair)), pair) _
-
-  // sell all <coin> in <pair>
-  def sell(pair: CurrencyPair) = transact(orderKind(false, isFlipped(pair)), pair) _
-
-  def isFlipped(pair: CurrencyPair): Boolean = My.baseCoin match {
-    case pair.base => false
-    case pair.counter => true
-    case _ => throw new Exception(s"trade pair ${pair} does not include the storage coin")
-  }
-
-  def getAlt(pair: CurrencyPair): Currency = if (isFlipped(pair)) pair.base else pair.counter
-
-  def orderKind(isBuy: Boolean, isFlipped: Boolean): Order.OrderType = if (isBuy == isFlipped) Order.OrderType.BID else Order.OrderType.ASK
-
-  def transact(orderType: Order.OrderType, pair: CurrencyPair)(exc: MyExchange, tradable: Big, limit: Big): Unit = {
-    // println(s"tradable: $tradable")
-    // println(s"limit: $limit")
-    val acc = exc.getAccountService
-    val pairMeta = exc.getExchangeMetaData.getCurrencyPairs.get(pair)
-    // CREDIT/BTC=CurrencyPairMetaData [tradingFee=0.2, minimumAmount=0.00010, maximumAmount=null, priceScale=8]
-    val trade: TradeService = exc.getTradeService
-    // println(s"trade: $trade")
-    val hasLimit = !isZero(limit)
-    // Util.retryInc { // TODO: ensure a failing action after creation can't make new trade
-      // try {
-        val orderId: String = if (hasLimit) {
-          val order = new LimitOrder.Builder(orderType, pair)
-            .limitPrice(limit)
-            .tradableAmount(tradable).build
-          // println(s"limit order: $order")
-          println(s"$orderType $pair $tradable ($exc) @ limit ${limit(rounded)}")
-          trade.placeLimitOrder(order)
-        } else {
-          val order = new MarketOrder.Builder(orderType, pair)
-            .tradableAmount(tradable).build
-          // println(s"market order: $order")
-          println(s"$orderType $pair $tradable ($exc) @ market rate")
-          trade.placeMarketOrder(order)
-        }
-        println(s"orderId: $orderId")
-        watchedOrders(exc) += orderId
-      // } catch {
-      //   case ex: ExchangeException =>
-      //     println(s"ex: $ex")
-      // }
-    // }
-  }
-
-  def watchOrders(tpl: (MyExchange, mutable.Set[String])): Unit = {
-    val (exc, orderIds) = tpl
-    // println(s"watchedOrders(${exc}): ${watchedOrders(exc)}")
-    val trade: TradeService = exc.getTradeService
-    if (!orderIds.isEmpty && trade != null) {
-      try {
-        val orderColl: java.util.Collection[Order] =
-          trade.getOrder(orderIds.toSeq:_*)
-        val orders = orderColl.toArray.toList.asInstanceOf[List[Order]]
-        println(s"orders: $orders")
-        orders.par.foreach((order: Order) => {
-          println(s"status: ${order.getStatus}")
-          order.getStatus match {
-            case Order.OrderStatus.FILLED => handleFilledOrder(order, exc)
-            case status => handleUnfilled(order, exc)
-          }
-        })
-      } catch {
-        case not: NotYetImplementedForExchangeException =>
-          // println(s"can't get orders for ${exc}")
-          // ^ Bittrex... need a way to throw this no more than once
-
-          // check open orders
-          val openOrders: OpenOrders = Util.retryInc {
-            trade.getOpenOrders(trade.createOpenOrdersParams)
-          }
-          val orders: List[LimitOrder] = openOrders.getOpenOrders.asScala.toList
-          println(s"orders: $orders")
-          val askedOrders = orders.filter((order: LimitOrder) => orderIds.contains(order.getId))
-          println(s"askedOrders: $askedOrders")
-          askedOrders.par.foreach((order: LimitOrder) => {
-            println(s"status: ${order.getStatus}")
-            handleUnfilled(order, exc)
-          })
-
-          // check completed trades
-          val userTrades: UserTrades = Util.retryInc {
-            trade.getTradeHistory(trade.createTradeHistoryParams)
-          }
-          val trades: List[UserTrade] = userTrades.getUserTrades.asScala.toList
-          println(s"trades: $trades")
-          val askedTrades = trades
-            .filter((trade: UserTrade) => orderIds.contains(trade.getOrderId))
-          println(s"askedTrades: $askedTrades")
-          askedTrades.par.foreach((trade: UserTrade) => {
-            handleFilledTrade(trade, exc)
-          })
-
-      }
-    }
-  }
-
-  def handleUnfilled(order: Order, exc: MyExchange): Unit = {
-    println(s"unfilled: $order")
-    // println(s"status: $status")
-    // // TODO: cancel if the market moved and we no longer expect it to fill / be profitable
-    // val canceled: boolean = trade.cancelOrder(order.id)
-    // println(s"canceled: $canceled")
   }
 
   def handleFilledTrade(trade: UserTrade, exc: MyExchange): Unit = {
@@ -530,32 +656,6 @@ object Exchanges {
 
     watchedOrders(exc) -= trade.getOrderId
     finishedPair(pair, exc)
-  }
-
-  // calculate the expected costs (BID) / proceedings (ASK) for a trade
-  def calcTotal(trade: UserTrade, exc: MyExchange): Big = {
-    val pair = trade.getCurrencyPair
-    val feeCoin = trade.getFeeCurrency
-    val feeMult: Big = feeCoin match {
-      case pair.counter => 1.0
-      case _ =>
-        // get rate `pair.counter / trade.getFeeCurrency` at exc
-        getTicker(exc, new CurrencyPair(feeCoin, pair.counter)) match {
-          case None => {
-            println(s"no ticker for ${exc} to calc fees")
-            // TODO: use rate from another exchange
-            1.0 // dummy
-          }
-          case Some(ticker) => {
-            // println(s"ticker: $ticker")
-            ticker.getAsk // guess pessimistic
-          }
-        }
-    }
-    // trade.getTradableAmount // base
-    // * trade.getPrice // counter/base
-    // - trade.getFeeAmount * feeMult
-    trade.getTradableAmount * trade.getPrice - trade.getFeeAmount * feeMult
   }
 
   def handleFilledOrder(order: Order, exc: MyExchange): Unit = {
@@ -584,90 +684,6 @@ object Exchanges {
           // TODO: consider best exchange to sell on. note risk transfer time.
       }
       case Failure(ex) => println(s"ex: $ex")
-    }
-  }
-
-  def makeExchange(tpl: (String, My.ApiCredential)): List[(String, MyExchange)] = {
-    val (name: String, cred: My.ApiCredential) = tpl
-    // println(s"name: $name")
-    // println(s"cred: $cred")
-    val spec = new ExchangeSpecification(name)
-    spec.setApiKey(cred.apikey)
-    spec.setSecretKey(cred.secret)
-    // println(s"spec: $spec")
-    // spec.setUserName(cred.user)
-    // spec.setPassword(cred.pw)
-
-    // val exc: MyExchange = Util.retry /*Inc*/ 3 {
-    //   ExchangeFactory.INSTANCE.createExchange(spec)
-    // }
-    // println(s"exchange: ${exc}")
-    // (name, exc)
-
-    val list = Util.retry /*Inc*/(3)({
-      ExchangeFactory.INSTANCE.createExchange(spec)
-    }).map((exc: Exchange) => {
-      println(s"exchange: ${exc}")
-      (name, exc.asInstanceOf[MyExchange])
-    }).toOption.toList
-    println(s"list: ${list}")
-    list
-  }
-
-  def getTicker(exc: MyExchange, pair: CurrencyPair): Option[Ticker] =
-    Util.retryInc {
-      Option(exc.getMarketDataService.getTicker(pair)) // yobit
-      .map((t: Ticker) => t.getTimestamp match {
-        case null => tickerMaker(t)
-        .timestamp(new java.util.Date(System.currentTimeMillis))
-        .build
-        case _ => t
-      })
-    }
-
-  def tickerMaker(t: Ticker): Ticker.Builder = {
-    new Ticker.Builder()
-    .ask(t.getAsk)
-    .bid(t.getBid)
-    .currencyPair(t.getCurrencyPair)
-    .high(t.getHigh)
-    .last(t.getLast)
-    .low(t.getLow)
-    .volume(t.getVolume)
-    .vwap(t.getVwap)
-    .timestamp(t.getTimestamp)
-  }
-
-  def invertPair(pair: CurrencyPair) = new CurrencyPair(pair.counter, pair.base)
-
-  def invertTicker(t: Ticker): Ticker = {
-    new Ticker.Builder()
-    // same
-    .timestamp(t.getTimestamp)
-    .volume(t.getVolume)
-    // flipped
-    .currencyPair(invertPair(t.getCurrencyPair))
-    .vwap(one / t.getVwap)
-    .last(one / t.getLast)
-    // also metric flipped
-    .ask(one / t.getBid)
-    .bid(one / t.getAsk)
-    .high(one / t.getLow)
-    .low(one / t.getHigh)
-    .build
-  }
-
-  def accInfo(exc: MyExchange): Try[AccountInfo] = {
-    exc.getAccountService match {
-      case null => Failure(new Exception(s"no AccountService for ${exc}"))
-      // ^ Yobit
-      case ser: AccountService => Util.retry(3)({
-        // println(s"ser: $ser")
-        // v this may fail
-        val acc = ser.getAccountInfo
-        // println(s"acc: $acc")
-        acc
-      })
     }
   }
 

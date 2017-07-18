@@ -1,13 +1,13 @@
 package trader
 
 import trader._
+import trader.Util._
 import scala.util._
 // import java.util._
 import java.util.{Date,Calendar,TimeZone}
-import com.typesafe.scalalogging.LazyLogging
 //import monocle._
 //import monocle.macros._
-import monocle.macros.syntax.lens._
+// import monocle.macros.syntax.lens._
 import io.circe._, io.circe.generic.auto._, io.circe.parser._, io.circe.syntax._
 import io.circe.generic.semiauto._
 import io.circe.generic.JsonCodec
@@ -39,9 +39,7 @@ import akka.http.scaladsl.model.HttpMethods._
 import akka.http.scaladsl.model.HttpProtocols._
 // import akka.http.scaladsl.model.headers._
 
-// TODO: convert to class to enable logger?
-//  extends LazyLogging
-object CryptoPingScraper {
+object CpingScraper {
 
   // types
   type CandleTuple = 
@@ -86,25 +84,31 @@ object CryptoPingScraper {
   val cPingList = "https://cryptoping.tech/backend/notifications/current"
   def cPingHistory(i: Int) = s"https://cryptoping.tech/backend/notifications?page=${i}"
   def cPingStats(ping: Ping) = s"https://cryptoping.tech/backend/chart_data/${ping.coin}/${ping.exchange.toLowerCase}"
-  val cpFormat = new java.text.SimpleDateFormat("yyyy-MM-dd HH:mm")
   val utc = TimeZone.getTimeZone("UTC")
+  val cpFormat = {
+    val f = new java.text.SimpleDateFormat("yyyy-MM-dd HH:mm")
+    f.setTimeZone(utc)
+    f
+  }
 
   // state
   val pingSet = collection.mutable.Set.empty[Ping]
 
   def main(args: Array[String]): Unit = {
-    cpFormat.setTimeZone(utc)
-
-    checkHistory
-
-    // println(s"exchanges: ${Exchanges.exchanges}")
-    // // println(s"exchange coins: ${Exchanges.coins}")
-    // val cancelable = Util.system.scheduler.schedule(0 seconds, My.fetchInterval) {
-    //   scrapeCPing()
-    // }
+    // checkHistory
+    val exchanges = new Exchanges(List(
+      "org.knowm.xchange.bittrex.v1.BittrexExchange",
+      // "org.knowm.xchange.yobit.YoBitExchange",
+      // "org.knowm.xchange.poloniex.PoloniexExchange",
+    ))
+    // println(s"exchanges: ${exchanges.exchanges}")
+    // println(s"exchange coins: ${exchanges.coins}")
+    val cancelable = system.scheduler.schedule(0 seconds, My.fetchInterval) {
+      scrapeCPing(exchanges)
+    }
   }
 
-  def scrapeCPing(): Unit = {
+  def scrapeCPing(exchanges: Exchanges): Unit = {
     val doc = fetchCPingHtml(cPingList)
     val pings: List[Ping] = (doc >> elementList("tr"))
       .drop(1)
@@ -122,9 +126,9 @@ object CryptoPingScraper {
     pingSet ++= newPings
     newPings.par.foreach((ping: Ping) => {
       println(s"ping: $ping")
-      crypto2xchange(ping.exchange).flatMap((s: String) => Option(Exchanges.exchanges(s))) match {
+      crypto2xchange(ping.exchange).flatMap((s: String) => Option(exchanges.exchanges(s))) match {
         case None => println(s"skipping exchange ${ping.exchange}")
-        case Some(exc) => Exchanges.invest(exc, new Currency(ping.coin), ping.valSig)
+        case Some(exc) => exchanges.invest(exc, new Currency(ping.coin), ping.valSig)
       }
     })
   }
@@ -138,12 +142,12 @@ object CryptoPingScraper {
       val parsed = Fetcher.parseJson(fetchCPing(cPingStats(ping)))
       // println(s"parsed: $parsed")
       val decoded = parsed
-        // .map(s => Util.log("fetched and parsed", s))
+        // .map(s => log("fetched and parsed", s))
         .toEither
         .flatMap(decode[CPingEnvelope[PingChart]] _)
       // println(s"decoded: $decoded")
       val candles = decoded
-        // .map(s => Util.log("decoded", s))
+        // .map(s => log("decoded", s))
         .toOption.get
         .result.candles.map((numbers: CandleTuple) => {
           // either.fold(tpl5 => tpl5 ::: (0.0,0.0,0.0), identity)
@@ -161,7 +165,7 @@ object CryptoPingScraper {
                   ::Double::Double::Double::Double::HNil].get).tupled
           Candle.tupled(tpl)
         })
-        // .map(s => Util.log("candled", s))
+        // .map(s => log("candled", s))
       // println(s"candles: $candles")
       println(s"candles: ${candles.size}")
       (ping, candles)
@@ -169,7 +173,7 @@ object CryptoPingScraper {
     // implicit val encoder: Encoder[CandleMap] = deriveEncoder[CandleMap]
     val json = map.asJson.noSpaces
     // println(s"json: ${json}")
-    Util.writeFile("history.json", json)
+    writeFile("history.json", json)
     println(s"wrote history")
   }
 

@@ -43,6 +43,5 @@ lazy val root = (project in file("."))
   )
 
 mainClass in Compile := Some(
-  // "trader.TestXchange"
-  "trader.CryptoPingScraper"
+  "trader.CpingScraper"
 )
