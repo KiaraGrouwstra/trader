@@ -61,6 +61,8 @@ object Exchanges extends LazyLogging {
   def isCrypto(coin: Currency): Boolean = !fiat.contains(coin)
   val rounded = new java.math.MathContext(7) // big(rounded)
 
+  def safeDiv(a: Big, b: Big): Big = if (a == null || b == null) null else a / b
+
   def failsExpectation(
     failRule: (List[(Long, Big)], List[Big], My.TimeRule) => Boolean
   )(xys: List[(Long, Big)])(expectation: My.TimeRule) = {
@@ -110,7 +112,7 @@ object Exchanges extends LazyLogging {
     case Some(ticker) =>
       // println(s"ticker: $ticker")
       val price = ticker.getAsk
-      val ratio = price / ticker.getBid
+      val ratio = safeDiv(price, ticker.getBid)
       println(s"ratio: $ratio")
       println(s"buyMin: ${My.conf.buyMin}")
       val minBuy = signal * My.conf.buyMin
@@ -144,7 +146,7 @@ object Exchanges extends LazyLogging {
           // println(s"availableBtc: $availableBtc")
           val spendBtc = btcLeft.min(availableBtc)
           // println(s"spendBtc: $spendBtc")
-          val coinsBuy = spendBtc / price
+          val coinsBuy = safeDiv(spendBtc, price)
           // println(s"coinsBuy: $coinsBuy")
           (btcLeft - spendBtc, amntAcc + coinsBuy)
       }
