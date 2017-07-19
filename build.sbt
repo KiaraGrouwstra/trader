@@ -25,7 +25,7 @@ Seq(
   "io.circe" %% "circe-yaml" % "0.6.1",
   "com.typesafe.scala-logging" %% "scala-logging" % "3.7.0",
   "ch.qos.logback" % "logback-classic" % "1.2.3",
-  // "org.scalatest" %% "scalatest" % "3.0.1",
+  "org.scalatest" %% "scalatest" % "3.0.1",
   "com.chuusai" %% "shapeless" % "2.3.2",
   "net.ruippeixotog" %% "scala-scraper" % "2.0.0-RC2" // -SNAPSHOT
 )

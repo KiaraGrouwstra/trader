@@ -1,37 +1,45 @@
 # how often to check for pings (seconds)
-pingInterval: 60
+pingInterval: 5
 # how often to check for price changes (seconds)
 priceInterval: 60
 # amount to invest in BTC, Bittrex minimum is 0.0005 = $1.24
 investment: 0.000545
 # skip buy if price < this * ping val
-buyMin: 0.99995
+buyMin: 0.95
 # max price willing to buy at (relative from cheapest)
 buyMax: 1.005
 # min price willing to sell at (relative from highest)
 sellMin: 0.98
 # max allowed bid/ask spread (ratio)
-allowedGap: 1.03
+allowedGap: 1.05
 # skip altcoins under min trade volume (BTC/mo)
-minVolume: 10000
+minVolume: 1000
 # sell if down this much from max since buy
-maxDrop: 0.99
+maxDrop: 0.8
+# bid >+n% of buy price then down from max by n%: sell
+maxDropPositive: 0.01
 # only follow pings with a max age (in minutes)
 maxAge: 5
 # sell if the price doesn't live up to expectations over different time periods
-timeRules:
+fallRules:
   # mins: check over the last n minutes
   # rate: price change deciding keep/sell
-  - mins: 0.2
-    rate: 0.995
+  # - mins: 0.2
+  #   rate: 0.995
+  # - mins: 1.0
+  #   rate: 0.999
+  # - mins: 3.0
+  #   rate: 1.0
+  # - mins: 10.0
+  #   rate: 1.01
+  # - mins: 15.0
+  #   rate: 1.02
   - mins: 1.0
-    rate: 0.999
-  - mins: 3.0
-    rate: 1.0
-  - mins: 10.0
-    rate: 1.01
+    rate: 0.9
+# sell when <-x% of buy price over y minutes
+downRules:
   - mins: 15.0
-    rate: 1.02
+    rate: 0.94
 cryptoping:
   user: user@example.com
   pw: mypassword

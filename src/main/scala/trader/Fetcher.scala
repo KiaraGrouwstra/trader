@@ -56,11 +56,7 @@ object Fetcher {
       (cookie.name, cookie.value)
     })
     // .toSeq
-    println(s"${resp.status} ${req.uri.toString}")
-    // println(s"resp: $resp")
-    // println(s"resp.status.isSuccess: ${resp.status.isSuccess}")
-    // println(s"resp.status.isRedirection: ${resp.status.isRedirection}")
-    // println(s"resp.status.isFailure: ${resp.status.isFailure}")
+    // println(s"${resp.status} ${req.uri.toString}")
     resp.status match {
       case (code: StatusCode) if code.isRedirection => fetchEntity(resp.header[Location].get.uri.toString)
       case (code: StatusCode) if code.isSuccess =>

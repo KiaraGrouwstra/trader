@@ -9,9 +9,12 @@ object FollowPings {
     // checkHistory
     val exchanges = new Exchanges(List(
       "org.knowm.xchange.bittrex.v1.BittrexExchange",
+      "org.knowm.xchange.poloniex.PoloniexExchange",
       // "org.knowm.xchange.yobit.YoBitExchange",
-      // "org.knowm.xchange.poloniex.PoloniexExchange",
     ))
+    if (exchanges.exchanges.isEmpty) {
+      throw new Exception("no exchanges passed init!")
+    }
     // println(s"exchanges: ${exchanges.exchanges}")
     // println(s"exchange coins: ${exchanges.coins}")
     val pingCancelable = Util.system.scheduler

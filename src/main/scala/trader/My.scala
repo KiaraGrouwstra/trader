@@ -20,8 +20,10 @@ object My {
     allowedGap: Double,
     minVolume: Int, // BTC/mo
     maxDrop: Double,
+    maxDropPositive: Double,
     maxAge: Int, // minutes
-    timeRules: List[TimeRule],
+    fallRules: List[TimeRule],
+    downRules: List[TimeRule],
     cryptoping: CryptoPing,
     wallets: Map[String, String], // key: currency code, value: address
     exchanges: Map[String, ApiCredential]) // key: XChange class path

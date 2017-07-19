@@ -43,9 +43,15 @@ object Exchanges extends LazyLogging {
   case class BestPairRoutes(askLow: ExcTicker, bidHigh: ExcTicker, ratio: BigDecimal)
 
   // implicit conversions
+  implicit def s2jBig(x: Big) = x match {
+    case null => null
+    case _ => x.bigDecimal
+  }
+  implicit def j2sBig(x: java.math.BigDecimal) = x match {
+    case null => null
+    case _ => BigDecimal(x)
+  }
   implicit def d2jBig(x: Double) = new java.math.BigDecimal(x)
-  implicit def j2sBig(x: java.math.BigDecimal) = BigDecimal(x)
-  implicit def s2jBig(x: Big) = x.bigDecimal
   implicit def d2sBig(x: Double) = j2sBig(d2jBig(x))
 
   // constants
@@ -55,24 +61,34 @@ object Exchanges extends LazyLogging {
   def isCrypto(coin: Currency): Boolean = !fiat.contains(coin)
   val rounded = new java.math.MathContext(7) // big(rounded)
 
-  def failsExpectations(xys: List[(Long, Big)])(expectation: My.TimeRule) = {
+  def failsExpectation(
+    failRule: (List[(Long, Big)], List[Big], My.TimeRule) => Boolean
+  )(xys: List[(Long, Big)])(expectation: My.TimeRule) = {
     val now = xys.last._1
     val idx = xys.indexWhere(_._1 < now - (expectation.mins minutes).toMillis)
     idx match {
       case -1 => false // period not yet reached
       case _ =>
-        // println(s"expectation: ${expectation}")
         val (_times, prcs): (List[Long], List[Big]) = xys.drop(idx).unzip
-        val failed = prcs.last < expectation.rate * prcs.head // TODO: linalg
+        val failed = failRule(xys, prcs, expectation)
         // ^ pair flip agnostic?
         if (failed) {
-          // println(s"datapoints: ${xys}")
           // println(s"failed for: ${xys(idx)}")
           println(s"failed for: ${expectation}")
         }
         failed
     }
   }: Boolean
+
+  def fellOver = failsExpectation((xys: List[(Long, Big)], prices: List[Big],
+    expectation: My.TimeRule) => prices.last < expectation.rate * prices.head) _
+  // TODO: linalg
+
+  def downOver = failsExpectation((xys: List[(Long, Big)],
+    prices: List[Big], expectation: My.TimeRule) => {
+    val buyPrice = xys.head._2
+    prices.forall(_ < expectation.rate * buyPrice)
+  }) _
 
   def makePair(exc: MyExchange, coin: Currency): CurrencyPair = {
     val pairs = exc.getExchangeMetaData.getCurrencyPairs
@@ -215,13 +231,15 @@ object Exchanges extends LazyLogging {
   def getTicker(exc: MyExchange, pair: CurrencyPair): Option[Ticker] =
     retry(3)({
       Option(exc.getMarketDataService.getTicker(pair)) // yobit
-      .map((t: Ticker) => t.getTimestamp match {
-        case null => tickerMaker(t)
-        .timestamp(new java.util.Date(System.currentTimeMillis))
-        .build
-        case _ => t
-      })
+      .map(timedTicker)
     }).toOption.flatMap(identity)
+
+  def timedTicker(t: Ticker): Ticker = t.getTimestamp match {
+    case null => tickerMaker(t)
+    .timestamp(new java.util.Date(System.currentTimeMillis))
+    .build
+    case _ => t
+  }
 
   def tickerMaker(t: Ticker): Ticker.Builder = {
     new Ticker.Builder()
@@ -233,7 +251,10 @@ object Exchanges extends LazyLogging {
     .low(t.getLow)
     .volume(t.getVolume)
     .vwap(t.getVwap)
-    .timestamp(t.getTimestamp)
+    .timestamp(t.getTimestamp match {
+      case null => new java.util.Date(System.currentTimeMillis)
+      case ts => ts
+    })
   }
 
   def invertPair(pair: CurrencyPair) = new CurrencyPair(pair.counter, pair.base)
@@ -255,9 +276,9 @@ object Exchanges extends LazyLogging {
     .build
   }
 
-  def flipNum(n: java.math.BigDecimal) = n match {
+  def flipNum(n: Big): Big = n match {
     case null => null
-    case zero => null
+    case big if isZero(big) => null
     case _ => one / n
   }
 
@@ -273,6 +294,32 @@ object Exchanges extends LazyLogging {
         acc
       })
     }
+  }
+
+  def getFailed(tickers: List[Ticker]): List[String] = {
+    val xys: List[(Long, Big)] = tickers
+    .map((t: Ticker) => (t.getTimestamp.getTime, new Big(t.getAsk)))
+    // ^ what about checking BID?
+    // println(s"xys: $xys")
+    val (_times, prices): (List[Long], List[Big]) = xys.unzip
+    // sell rules:
+    val max = prices.max
+    // - if lost n% compared to max since buy (5s)
+    val maxDrop = prices.last < My.conf.maxDrop * max
+    // bid >+n% of buy price then down from max by n%: sell
+    val dropPos = 1 + My.conf.maxDropPositive
+    val maxDropPositive = max > dropPos && dropPos * prices.last < max
+    // - linear regression: if <+1%/10min
+    val fallRules = My.conf.fallRules.exists(fellOver(xys))
+    // sell when <-x% of buy price over y minutes
+    val downRules = My.conf.downRules.exists(downOver(xys))
+    val checks = List(
+      "maxDrop" -> maxDrop,
+      "maxDropPositive" -> maxDropPositive,
+      "fallRules" -> fallRules,
+      "downRules" -> downRules,
+    ).toMap
+    checks.filter((tpl2: (String, Boolean)) => tpl2._2).keys.toList
   }
 
 }
@@ -384,7 +431,7 @@ class Exchanges(var whitelist: List[String] = Nil) extends LazyLogging {
         watchedOrders(exc) += orderId
       // } catch {
       //   case ex: ExchangeException =>
-      //     println(s"ex: $ex")
+      //     println(ex)
       // }
     // }
   }
@@ -411,14 +458,13 @@ class Exchanges(var whitelist: List[String] = Nil) extends LazyLogging {
           val t = market.getTicker(pair)
           // Option(t) // yobit
           // .map((t: Ticker) => 
-          t.getTimestamp match {
-            case null => tickerMaker(t)
-              .timestamp(new java.util.Date(System.currentTimeMillis))
-              .build
-            case _ => t
-          }
+          timedTicker(t)
           // )
-        }).toOption.map((ticker: Ticker) => (pair, ticker)).toList
+        }).toOption
+        // .filter(_.getAsk != null && _.getBid != null)
+        .filter(_.getAsk != null)
+        .filter(_.getBid != null)
+        .map((ticker: Ticker) => (pair, ticker)).toList
       })
       println(s"pairTickers: $pairTickers")
       val inverted = pairTickers.map(tpl => {
@@ -474,33 +520,15 @@ class Exchanges(var whitelist: List[String] = Nil) extends LazyLogging {
     // TODO: trade
   }
 
-  def checkCoin(tpl: (Combo, List[Ticker])) = {
+  def checkCoin(tpl: (Combo, List[Ticker])): Unit = {
     val ((pair, exc), tckrs) = tpl
     val tickers: List[Ticker] = tckrs ::: getTicker(exc, pair).toList
     // println(s"tickers: $tickers")
     coins += (((pair, exc), tickers))
-    val xys: List[(Long, Big)] = tickers
-    .map((t: Ticker) => (t.getTimestamp.getTime, new Big(t.getAsk)))
-    // ^ what about checking BID?
-    // println(s"xys: $xys")
-    val (_times, prices): (List[Long], List[Big]) = xys.unzip
-    // sell rules:
-    // - below buying point (5s)
-    val belowBuy = prices.last < prices.head
-    // - if lost n% compared to max since buy (5s)
-    val underPeak = prices.last < My.conf.maxDrop * prices.max
-    // - linear regression: if <+1%/10min
-    val underPerforming = My.conf.timeRules.exists(failsExpectations(xys))
-    val doSell = belowBuy || underPeak || underPerforming
-    if (doSell) {
-      val coin = getAlt(pair)
-      val reasons = List(
-        "belowBuy" -> belowBuy,
-        "underPeak" -> underPeak,
-        "underPerforming" -> underPerforming,
-      ).toMap
-      .filter((tpl: (String, Boolean)) => tpl._2)
-      .keys.toList.mkString(", ")
+    val coin = getAlt(pair)
+    val failedChecks = getFailed(tickers)
+    if (failedChecks.nonEmpty) {
+      val reasons = failedChecks.mkString(", ")
       println(s"SELL ${exc} ${coin}: ${reasons}")
       // println(s"prices: ${prices.map(_.toDouble)}")
       val have: Big = accInfo(exc).map(_.getWallet.getBalance(coin).getAvailable) match {
@@ -529,7 +557,7 @@ class Exchanges(var whitelist: List[String] = Nil) extends LazyLogging {
         // println(acc.withdrawFunds(My.baseCoin, btcVal, My.storageAddr))
       } catch {
         case ex: ExchangeException =>
-          println(s"ex: $ex")
+          println(ex)
           // stop watching for permanent errors
           ex.getMessage match {
             case "DUST_TRADE_DISALLOWED_MIN_VALUE_50K_SAT" =>
@@ -537,7 +565,7 @@ class Exchanges(var whitelist: List[String] = Nil) extends LazyLogging {
           }
       }
     } else {
-      println(s"keep")
+      println(s"keep ${exc} ${coin}")
       logger.info(s"LOGGER keep")
     }
   }
@@ -626,7 +654,7 @@ class Exchanges(var whitelist: List[String] = Nil) extends LazyLogging {
             // move(fromExc, exc, need - haveBTC, My.baseCoin)]
             // TODO: return `need` only when the money is in...
           case Failure(ex) =>
-            println(s"ex: $ex")
+            println(ex)
             need
         }
         val market = exc.getMarketDataService
@@ -645,7 +673,7 @@ class Exchanges(var whitelist: List[String] = Nil) extends LazyLogging {
             }
           } catch {
             case ex: ExchangeException =>
-              println(s"ex: $ex")
+              println(ex)
           }
         // }
     }
@@ -693,7 +721,7 @@ class Exchanges(var whitelist: List[String] = Nil) extends LazyLogging {
           // successful buy?
           // TODO: consider best exchange to sell on. note risk transfer time.
       }
-      case Failure(ex) => println(s"ex: $ex")
+      case Failure(ex) => println(ex)
     }
   }
 

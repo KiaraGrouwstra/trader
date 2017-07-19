@@ -180,15 +180,13 @@ object CpingScraper {
       fetchHistory(page+1, acc ++ pings)
   }
 
-  def crypto2xchange(name: String): Option[String] = {
-    name match {
-      case "bittrex" => Some("org.knowm.xchange.bittrex.v1.BittrexExchange")
-      case "poloniex" => Some("org.knowm.xchange.poloniex.PoloniexExchange")
-      case "yobit" => Some("org.knowm.xchange.yobit.YoBitExchange")
-      // case "cryptopia" => 
-      case s => None
-    }
-  }
+  def crypto2xchange(name: String): Option[String] = Option(name match {
+    case "bittrex" => "org.knowm.xchange.bittrex.v1.BittrexExchange"
+    case "poloniex" => "org.knowm.xchange.poloniex.PoloniexExchange"
+    case "yobit" => "org.knowm.xchange.yobit.YoBitExchange"
+    // case "cryptopia" => 
+    case s => null
+  })
 
   def fetchCPingHtml(url: String): Document =
     Fetcher.parseHtml(fetchCPing(url)).get

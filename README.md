@@ -26,7 +26,7 @@ Project scope:
 - fix exchanges:
 	- Poloniex: gives `ExchangeError`s
 	- Yobit: [no AccountService/TradeService](https://github.com/timmolter/XChange/tree/develop/xchange-yobit/src/main/java/org/knowm/xchange/yobit/service), though endpoints [available](https://yobit.net/en/api/)
-	- Cryptopia: not implemented
+	- Cryptopia: [not implemented](https://github.com/timmolter/XChange/issues/1596)
 
 Extra:
 - switch to akka
