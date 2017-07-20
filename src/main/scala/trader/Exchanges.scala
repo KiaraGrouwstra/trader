@@ -42,7 +42,14 @@ object Exchanges extends LazyLogging {
   type ExcTicker = (MyExchange, Ticker)
   case class BestPairRoutes(askLow: ExcTicker, bidHigh: ExcTicker, ratio: BigDecimal)
 
+  // def wrapNull[A,B](f: (A) => B) = (x: A): B => x match {
+  //   case null => null
+  //   case _ => f(x)
+  // }
+
   // implicit conversions
+  // implicit def s2jBig = wrapNull((x: Big) => x.bigDecimal _)
+  // implicit def j2sBig = wrapNull((x: java.math.BigDecimal) => BigDecimal(x))
   implicit def s2jBig(x: Big) = x match {
     case null => null
     case _ => x.bigDecimal
@@ -61,7 +68,7 @@ object Exchanges extends LazyLogging {
   def isCrypto(coin: Currency): Boolean = !fiat.contains(coin)
   val rounded = new java.math.MathContext(7) // big(rounded)
 
-  def safeDiv(a: Big, b: Big): Big = if (a == null || b == null) null else a / b
+  def safeDiv(a: Big, b: Big): Big = if (a == null || b == null || isZero(b)) null else a / b
 
   def failsExpectation(
     failRule: (List[(Long, Big)], List[Big], My.TimeRule) => Boolean
@@ -225,7 +232,7 @@ object Exchanges extends LazyLogging {
     retry(3)({
       ExchangeFactory.INSTANCE.createExchange(spec)
     }).map((exc: Exchange) => {
-      println(s"exchange: ${exc}")
+      // println(s"exchange: ${exc}")
       (name, MyExchange(exc))
     }).toOption.toList
   }
@@ -456,23 +463,24 @@ class Exchanges(var whitelist: List[String] = Nil) extends LazyLogging {
       val market = exc.getMarketDataService
       println(s"market: $market")
       val pairTickers: List[(CurrencyPair, Ticker)] = pairs.flatMap((pair: CurrencyPair) => {
+        // println(s"pair: $pair")
         retry(3)({
-          val t = market.getTicker(pair)
-          // Option(t) // yobit
-          // .map((t: Ticker) => 
-          timedTicker(t)
-          // )
+          Option(market.getTicker(pair))
         }).toOption
-        // .filter(_.getAsk != null && _.getBid != null)
-        .filter(_.getAsk != null)
-        .filter(_.getBid != null)
+        .flatMap(identity)
+        .map(timedTicker)
+        .filter((t: Ticker) => t.getAsk != null && t.getAsk > 0 && t.getBid != null && t.getBid > 0)
         .map((ticker: Ticker) => (pair, ticker)).toList
       })
       println(s"pairTickers: $pairTickers")
-      val inverted = pairTickers.map(tpl => {
+      val inverted: List[(CurrencyPair, Ticker)] = pairTickers.map(tpl => {
         val (pair, ticker): (CurrencyPair, Ticker) = tpl
         println(s"ticker: $ticker")
-        (invertPair(pair), invertTicker(ticker))
+        val invPair = invertPair(pair)
+        println(s"invPair: $invPair")
+        val invTicker = invertTicker(ticker)
+        println(s"invTicker: $invTicker")
+        (invPair, invTicker)
       })
       println(s"inverted: $inverted")
       (
@@ -482,6 +490,7 @@ class Exchanges(var whitelist: List[String] = Nil) extends LazyLogging {
     })
     // .toMap
     println(s"excPairTickers: $excPairTickers")
+
     // turn inside-out to have pairs on top
     val pairExcTickers: List[(CurrencyPair, ExcTicker)]
     = excPairTickers.flatMap(both => {
@@ -492,34 +501,64 @@ class Exchanges(var whitelist: List[String] = Nil) extends LazyLogging {
       })
     })
     println(s"pairExcTickers: $pairExcTickers")
+
     val pairExcTickerMap: Map[CurrencyPair, List[ExcTicker]]
     = pairExcTickers.groupBy(_._1).map((kv) => {
       val (k,v) = kv
       (k, v.map(_._2))
     })
     println(s"pairExcTickerMap: $pairExcTickerMap")
+
+    val pairCounts: Map[CurrencyPair, Int] = pairExcTickerMap.mapValues(_.size)
+    println(s"pairCounts: $pairCounts")
+
     // filter to asc pairs?
     // for each pair find highest bid, lowest ask
     // - ^ how to deal with amounts?
     //   - calc for fixed amount?
     //   - for higher amounts merge order-books?
+
     val bestRoutesPairs: Map[CurrencyPair, BestPairRoutes] = pairExcTickerMap
+    .filter(_._2.size > 0)
+    // .filter(_._2.getAsk != null)
+    // .filter(_._2.getBid != null)
     .map((tpl) => {
+      println(s"tpl: $tpl")
       val (pair, tpls): (CurrencyPair, List[ExcTicker]) = tpl
+      println(s"pair: $pair")
+      println(s"tpls: $tpls")
       val lowestAsk = tpls.minBy(_._2.getAsk)
+      println(s"lowestAsk: $lowestAsk")
       val highestBid = tpls.maxBy(_._2.getBid)
-      val ratio = highestBid._2.getBid / lowestAsk._2.getAsk
+      println(s"highestBid: $highestBid")
+      val ratio = safeDiv(highestBid._2.getBid, lowestAsk._2.getAsk)
+      println(s"ratio: $ratio")
       val routes = new BestPairRoutes(lowestAsk, highestBid, ratio)
+      println(s"routes: $routes")
       (pair, routes)
     })
     println(s"bestRoutesPairs: $bestRoutesPairs")
+
     // sort by ratio to find best pair-wise arbitrage
-    val sortedPairwiseOptions = bestRoutesPairs.toList.sortBy(tpl => {
+    val sortedPairwiseOptions = bestRoutesPairs
+    .filterKeys((pair: CurrencyPair) => pair.base == Currency.BTC && isCrypto(pair.counter))
+    // ^ ignore fiat / non-BTC pairs, flipped dupes
+    .toList.sortBy(tpl => {
       val (pair, routes): (CurrencyPair, BestPairRoutes) = tpl
       routes.ratio
     }).reverse
     println(s"sortedPairwiseOptions: ${sortedPairwiseOptions}")
+
+    sortedPairwiseOptions.foreach((opt) => {
+      val (pair, (best)) = opt
+      println(s"opt: $pair ${best.ratio} (${best.askLow._1} -> ${best.bidHigh._1})")
+    })
+
     // TODO: trade
+    val usedExchanges = excPairTickers.filter(_._2.nonEmpty).map(_._1)
+    println(s"usedExchanges: ${usedExchanges}")
+    val numExchanges: Int = usedExchanges.size
+    println(s"numExchanges: ${numExchanges}")
   }
 
   def checkCoin(tpl: (Combo, List[Ticker])): Unit = {
