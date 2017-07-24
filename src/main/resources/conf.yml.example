@@ -14,8 +14,14 @@ sellMin: 0.98
 allowedGap: 1.05
 # skip altcoins under min trade volume (BTC/mo)
 minVolume: 1000
+# sell if down this much from buy
+sellBelow: 0.1
+# sell if up this much from buy
+sellAbove: 2.0
+# always sell after a certain number of minutes
+sellAfter: 60
 # sell if down this much from max since buy
-maxDrop: 0.8
+maxDrop: 0.1 # 0.975
 # bid >+n% of buy price then down from max by n%: sell
 maxDropPositive: 0.01
 # only follow pings with a max age (in minutes)

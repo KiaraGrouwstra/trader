@@ -17,8 +17,11 @@ object My {
     buyMin: Double,
     buyMax: Double,
     sellMin: Double, // make relative to curve?
-    allowedGap: Double,
+    allowedGap: Double, // bid/ask spread
     minVolume: Int, // BTC/mo
+    sellAbove: Double,
+    sellBelow: Double,
+    sellAfter: Int, // minutes
     maxDrop: Double,
     maxDropPositive: Double,
     maxAge: Int, // minutes

@@ -194,7 +194,7 @@ object CpingScraper {
   def fetchCPing(url: String): HttpEntity = {
     val ent: Try[HttpEntity] = Fetcher.fetchEntity(url)
     // .merge
-    println(s"fetched pings")
+    // println(s"fetched pings")
     // println(s"ent: ${ent}")
     ent.flatMap(Fetcher.parseHtml _) match {
       case Success(doc) =>

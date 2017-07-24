@@ -64,9 +64,15 @@ object Exchanges extends LazyLogging {
   // constants
   val zero: Big = new java.math.BigDecimal(0.0)
   val one: Big = new java.math.BigDecimal(1.0)
+  val maxDiff: Big = new java.math.BigDecimal(10.0)
   val fiat = List("AED", "AFN", "ALL", "AMD", "ANG", "AOA", "ARS", "AUD", "AWG", "AZN", "BAM", "BBD", "BDT", "BGN", "BHD", "BIF", "BMD", "BND", "BOB", "BOV", "BRL", "BSD", "BTN", "BWP", "BYN", "BZD", "CAD", "CDF", "CHE", "CHF", "CHW", "CLF", "CLP", "CNY", "COP", "COU", "CRC", "CUC", "CUP", "CVE", "CZK", "DJF", "DKK", "DOP", "DZD", "EGP", "ERN", "ETB", "EUR", "FJD", "FKP", "GBP", "GEL", "GHS", "GIP", "GMD", "GNF", "GTQ", "GYD", "HKD", "HNL", "HRK", "HTG", "HUF", "IDR", "ILS", "INR", "IQD", "IRR", "ISK", "JMD", "JOD", "JPY", "KES", "KGS", "KHR", "KMF", "KPW", "KRW", "KWD", "KYD", "KZT", "LAK", "LBP", "LKR", "LRD", "LSL", "LYD", "MAD", "MDL", "MGA", "MKD", "MMK", "MNT", "MOP", "MRO", "MUR", "MVR", "MWK", "MXN", "MXV", "MYR", "MZN", "NAD", "NGN", "NIO", "NOK", "NPR", "NZD", "OMR", "PAB", "PEN", "PGK", "PHP", "PKR", "PLN", "PYG", "QAR", "RON", "RSD", "RUB", "RWF", "SAR", "SBD", "SCR", "SDG", "SEK", "SGD", "SHP", "SLL", "SOS", "SRD", "SSP", "STD", "SVC", "SYP", "SZL", "THB", "TJS", "TMT", "TND", "TOP", "TRY", "TTD", "TWD", "TZS", "UAH", "UGX", "USD", "USN", "UYI", "UYU", "UZS", "VEF", "VND", "VUV", "WST", "XAF", "XAG", "XAU", "XBA", "XBB", "XBC", "XBD", "XCD", "XDR", "XOF", "XPD", "XPF", "XPT", "XSU", "XTS", "XUA", "XXX", "YER", "ZAR", "ZMW", "ZWL").map(x => new Currency(x)).toSet
   def isCrypto(coin: Currency): Boolean = !fiat.contains(coin)
   val rounded = new java.math.MathContext(7) // big(rounded)
+  val exchangeParams: Map[String, Map[String, Any]] = List(
+    "org.knowm.xchange.ripple.RippleExchange" -> List(
+      RippleExchange.TRUST_API_RIPPLE_COM -> true,
+    ),
+  ).toMap.mapValues(_.toMap)
 
   def safeDiv(a: Big, b: Big): Big = if (a == null || b == null || isZero(b)) null else a / b
 
@@ -143,15 +149,11 @@ object Exchanges extends LazyLogging {
       isZero(btcLeft) match {
         case true => (btcLeft, amntAcc) // shortcut
         case _ =>
-          // println(s"btcLeft: $btcLeft")
-          // println(s"amntAcc: $amntAcc")
-          val price = order.getLimitPrice // coin in BTC
-          // println(s"price: $price")
-          val availableCoin = order.getTradableAmount
-          // println(s"availableCoin: $availableCoin")
-          val availableBtc = price * availableCoin
-          // println(s"availableBtc: $availableBtc")
-          val spendBtc = btcLeft.min(availableBtc)
+          val (price, volBase, volCounter) = orderStats(order)
+          // val price = order.getLimitPrice // counter/base
+          // val volBase = order.getTradableAmount
+          // val volCounter = price * volBase
+          val spendBtc = btcLeft.min(volCounter)
           // println(s"spendBtc: $spendBtc")
           val coinsBuy = safeDiv(spendBtc, price)
           // println(s"coinsBuy: $coinsBuy")
@@ -228,6 +230,10 @@ object Exchanges extends LazyLogging {
     // println(s"spec: $spec")
     // spec.setUserName(cred.user)
     // spec.setPassword(cred.pw)
+    exchangeParams.applyOrElse(name, (k) => Nil).foreach(tpl => {
+      val (k, v) = tpl
+      spec.setExchangeSpecificParametersItem(k, v)
+    })
 
     retry(3)({
       ExchangeFactory.INSTANCE.createExchange(spec)
@@ -310,11 +316,17 @@ object Exchanges extends LazyLogging {
     .map((t: Ticker) => (t.getTimestamp.getTime, new Big(t.getAsk)))
     // ^ what about checking BID?
     // println(s"xys: $xys")
-    val (_times, prices): (List[Long], List[Big]) = xys.unzip
+    val (times, prices): (List[Long], List[Big]) = xys.unzip
     // sell rules:
     val max = prices.max
-    // - if lost n% compared to max since buy (5s)
+    // - if lost n% compared to max since buy
     val maxDrop = prices.last < My.conf.maxDrop * max
+    // - if down n% from buy
+    val sellBelow = prices.last < My.conf.sellBelow * prices.head
+    // - if up n% from buy
+    val sellAbove = prices.last > My.conf.sellAbove * prices.head
+    // - always sell after a certain number of minutes
+    val sellAfter = times.last > (My.conf.sellAfter minutes).toMillis + times.head
     // bid >+n% of buy price then down from max by n%: sell
     val dropPos = 1 + My.conf.maxDropPositive
     val maxDropPositive = max > dropPos && dropPos * prices.last < max
@@ -324,6 +336,9 @@ object Exchanges extends LazyLogging {
     val downRules = My.conf.downRules.exists(downOver(xys))
     val checks = List(
       "maxDrop" -> maxDrop,
+      "sellBelow" -> sellBelow,
+      "sellAbove" -> sellAbove,
+      "sellAfter" -> sellAfter,
       "maxDropPositive" -> maxDropPositive,
       "fallRules" -> fallRules,
       "downRules" -> downRules,
@@ -571,6 +586,8 @@ class Exchanges(var whitelist: List[String] = Nil) extends LazyLogging {
     if (failedChecks.nonEmpty) {
       val reasons = failedChecks.mkString(", ")
       println(s"SELL ${exc} ${coin}: ${reasons}")
+      println(s"buy info: ${tickers.head}")
+      println(s"sell info: ${tickers.last}")
       // println(s"prices: ${prices.map(_.toDouble)}")
       val have: Big = accInfo(exc).map(_.getWallet.getBalance(coin).getAvailable) match {
         case Success(squat) if squat.doubleValue == 0.0 =>
@@ -652,7 +669,7 @@ class Exchanges(var whitelist: List[String] = Nil) extends LazyLogging {
             trade.getTradeHistory(trade.createTradeHistoryParams)
           }).map((userTrades: UserTrades) => {
             val trades: List[UserTrade] = userTrades.getUserTrades.asScala.toList
-            println(s"trades: $trades")
+            // println(s"trades: $trades")
             val askedTrades = trades
               .filter((trade: UserTrade) => orderIds.contains(trade.getOrderId))
             println(s"askedTrades: $askedTrades")
