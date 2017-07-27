@@ -70,7 +70,7 @@ object Exchanges extends LazyLogging {
   val rounded = new java.math.MathContext(7) // big(rounded)
   val exchangeParams: Map[String, Map[String, Any]] = List(
     "org.knowm.xchange.ripple.RippleExchange" -> List(
-      RippleExchange.TRUST_API_RIPPLE_COM -> true,
+      ripple.RippleExchange.PARAMETER_TRUST_API_RIPPLE_COM -> true,
     ),
   ).toMap.mapValues(_.toMap)
 
@@ -203,12 +203,12 @@ object Exchanges extends LazyLogging {
       case _ =>
         // get rate `pair.counter / trade.getFeeCurrency` at exc
         getTicker(exc, new CurrencyPair(feeCoin, pair.counter)) match {
-          case None => {
+          case Failure(e) => {
             println(s"no ticker for ${exc} to calc fees")
             // TODO: use rate from another exchange
             1.0 // dummy
           }
-          case Some(ticker) => {
+          case Success(ticker) => {
             // println(s"ticker: $ticker")
             ticker.getAsk // guess pessimistic
           }
@@ -230,8 +230,8 @@ object Exchanges extends LazyLogging {
     // println(s"spec: $spec")
     // spec.setUserName(cred.user)
     // spec.setPassword(cred.pw)
-    exchangeParams.applyOrElse(name, (k) => Nil).foreach(tpl => {
-      val (k, v) = tpl
+    exchangeParams.applyOrElse(name, (k: String) => Nil).foreach(tpl => {
+      val (k, v): (String, Any) = tpl
       spec.setExchangeSpecificParametersItem(k, v)
     })
 
@@ -243,11 +243,11 @@ object Exchanges extends LazyLogging {
     }).toOption.toList
   }
 
-  def getTicker(exc: MyExchange, pair: CurrencyPair): Option[Ticker] =
+  def getTicker(exc: MyExchange, pair: CurrencyPair): Try[Ticker] =
     retry(3)({
-      Option(exc.getMarketDataService.getTicker(pair)) // yobit
+      Try(exc.getMarketDataService.getTicker(pair)) // yobit
       .map(timedTicker)
-    }).toOption.flatMap(identity)
+    }).flatMap(identity)
 
   def timedTicker(t: Ticker): Ticker = t.getTimestamp match {
     case null => tickerMaker(t)
@@ -402,7 +402,7 @@ class Exchanges(var whitelist: List[String] = Nil) extends LazyLogging {
         .filter((coin: Currency) => isCrypto(coin) && coin != My.baseCoin)
         .map((coin: Currency) => {
           val pair = makePair(exc, coin)
-          val tickers = getTicker(exc, pair).toList
+          val tickers = getTicker(exc, pair).toOption.toList
           ((pair, exc), tickers)
         })
       ).getOrElse(Nil).toList
@@ -493,16 +493,16 @@ class Exchanges(var whitelist: List[String] = Nil) extends LazyLogging {
       println(s"pairs: $pairs")
       val market = exc.getMarketDataService
       println(s"market: $market")
-      val pairTickers: List[(CurrencyPair, Ticker)] = pairs.flatMap((pair: CurrencyPair) => {
+      val pairTickers: List[(CurrencyPair, Ticker)] = pairs.flatMap(tryMap((pair: CurrencyPair) => {
         // println(s"pair: $pair")
         retry(3)({
-          Option(market.getTicker(pair))
-        }).toOption
+          Try(market.getTicker(pair))
+        })
         .flatMap(identity)
         .map(timedTicker)
         .filter((t: Ticker) => t.getAsk != null && t.getAsk > 0 && t.getBid != null && t.getBid > 0)
-        .map((ticker: Ticker) => (pair, ticker)).toList
-      })
+        .map((ticker: Ticker) => (pair, ticker))
+      }))
       println(s"pairTickers: $pairTickers")
       val inverted: List[(CurrencyPair, Ticker)] = pairTickers.map(tpl => {
         val (pair, ticker): (CurrencyPair, Ticker) = tpl
@@ -592,20 +592,28 @@ class Exchanges(var whitelist: List[String] = Nil) extends LazyLogging {
     }).reverse
     println(s"sortedPairwiseOptions: ${sortedPairwiseOptions}")
 
-    sortedPairwiseOptions.foreach((opt) => {
+    sortedPairwiseOptions.foreach(tryMap((opt) => Try {
       val (pair, best) = opt
       println(s"opt: $pair ${best.ratio} (${best.askLow._1} -> ${best.bidHigh._1})")
       val maxBid: Big = best.bidHigh._2.getBid
+      println(s"maxBid: ${maxBid}")
       val minAsk: Big = best.askLow._2.getAsk
+      println(s"minAsk: ${minAsk}")
 
-      val askOrders: List[LimitOrder] = getExcTickerOrderBook(best.askLow ).getAsks.asScala
+      val askOrders: List[LimitOrder] = retry(3)({
+        getExcTickerOrderBook(best.askLow).getAsks.asScala
         .toList.filter(maxBid < _.getLimitPrice)
-      val bidOrders: List[LimitOrder] = getExcTickerOrderBook(best.bidHigh).getBids.asScala
+      }).toOption.toList.flatMap(identity)
+      println(s"askOrders: ${askOrders}")
+      val bidOrders: List[LimitOrder] = retry(3)({
+        getExcTickerOrderBook(best.bidHigh).getBids.asScala
         .toList.filter(minAsk > _.getLimitPrice)
+      }).toOption.toList.flatMap(identity)
+      println(s"bidOrders: ${bidOrders}")
       // ^ both sorted from the middle, i.e. ask asc, bid desc.
 
-      var askIdx = -1
-      var bidIdx = -1
+      var askIdx = 0
+      var bidIdx = 0
       var askVolBase    : Big = new java.math.BigDecimal(0.0)
       var bidVolBase    : Big = new java.math.BigDecimal(0.0)
       var bidVolCounter : Big = new java.math.BigDecimal(0.0)
@@ -615,66 +623,98 @@ class Exchanges(var whitelist: List[String] = Nil) extends LazyLogging {
       var crossPrice: Big = new java.math.BigDecimal(0.0)
 
       // until a price closes the gap...
-      while (askPrice < bidPrice) {
+      while (askPrice < bidPrice &&
+            askOrders.isDefinedAt(askIdx) &&
+            bidOrders.isDefinedAt(bidIdx)) {
+        println(s"looping...")
+        println(s"askPrice: ${askPrice}")
+        println(s"bidPrice: ${bidPrice}")
+        println(s"askVolBase: ${askVolBase}")
+        println(s"bidVolBase: ${bidVolBase}")
         // pop an order for side with least volBase
         if (askVolBase <= bidVolBase) {
-          askIdx += 1
           val order = askOrders(askIdx) // fails if no more volume?
+          println(s"order: ${order}")
+          askIdx += 1
+          println(s"askIdx: ${askIdx}")
           val (price, volBase, volCounter) = orderStats(order)
           askPrice = price
+          println(s"askPrice: ${askPrice}")
           if (askPrice < bidPrice) {
             askVolBase = askVolBase + volBase // no += :(
+            println(s"askVolBase: ${askVolBase}")
             askVolCounter = askVolCounter + volCounter
+            println(s"askVolCounter: ${askVolCounter}")
           } else {
             val diffVolBase = bidVolBase - askVolBase
-            val price = bidOrders(bidIdx).getLimitPrice
+            println(s"diffVolBase: ${diffVolBase}")
+            val price: Big = Try({
+              j2sBig(bidOrders(bidIdx - 1).getLimitPrice)
+            }).getOrElse(zero)
+            println(s"price: ${price}")
             bidVolCounter = bidVolCounter - diffVolBase * price
+            println(s"bidVolCounter: ${bidVolCounter}")
             bidVolBase = askVolBase
+            println(s"bidVolBase: ${bidVolBase}")
             crossPrice = bidPrice
+            println(s"crossPrice: ${crossPrice}")
           }
         } else {
-          bidIdx += 1
           val order = bidOrders(bidIdx) // fails if no more volume?
+          println(s"order: ${order}")
+          bidIdx += 1
+          println(s"bidIdx: ${bidIdx}")
           val (price, volBase, volCounter) = orderStats(order)
           bidPrice = price
+          println(s"bidPrice: ${bidPrice}")
           if (askPrice < bidPrice) {
             bidVolBase = bidVolBase + volBase // no += :(
+            println(s"bidVolBase: ${bidVolBase}")
             bidVolCounter = bidVolCounter + volCounter
+            println(s"bidVolCounter: ${bidVolCounter}")
           } else {
             val diffVolBase = askVolBase - bidVolBase
-            val price = askOrders(askIdx).getLimitPrice
+            println(s"diffVolBase: ${diffVolBase}")
+            val price: Big = Try({
+              j2sBig(askOrders(askIdx - 1).getLimitPrice)
+            }).getOrElse(zero)
+            println(s"price: ${price}")
             askVolCounter = askVolCounter - diffVolBase * price
+            println(s"askVolCounter: ${askVolCounter}")
             askVolBase = bidVolBase
+            println(s"askVolBase: ${askVolBase}")
             crossPrice = askPrice
+            println(s"crossPrice: ${crossPrice}")
           }
         }
 
       }
 
-      println(s"askPrice: $askPrice")
-      println(s"bidPrice: $bidPrice")
-      println(s"crossPrice: $crossPrice")
       val volBase = askVolBase
       println(s"volBase: $volBase")
-      val avgBid = safeDiv(bidVolCounter, volBase)
-      val avgAsk = safeDiv(askVolCounter, volBase)
-      val avgDif = avgAsk - avgBid
-      println(s"avgDif: $avgDif")
-      val diff = askVolCounter - bidVolCounter
-      println(s"diff: $diff")
-      println(s"ARB $pair (${best.askLow._1} -> ${best.bidHigh._1}): trade $volBase at avgDif $avgDif for $diff profit!")
+      if (!isZero(volBase)) {
+        println(s"askPrice: $askPrice")
+        println(s"bidPrice: $bidPrice")
+        println(s"crossPrice: $crossPrice")
+        val avgBid = safeDiv(bidVolCounter, volBase)
+        val avgAsk = safeDiv(askVolCounter, volBase)
+        val avgDif = avgAsk - avgBid
+        println(s"avgDif: $avgDif")
+        val diff = askVolCounter - bidVolCounter
+        println(s"diff: $diff")
+        println(s"ARB $pair (${best.askLow._1} -> ${best.bidHigh._1}): trade $volBase at avgDif $avgDif for $diff profit!")
 
-      // actually consider:
-      // - trade/withdrawal fees
-      // - coins (ignore fiat?)
-      // - getting assets in right coin/exchange
-      //   - insist on BTC as entry coin?
-      //   - otherwise calculate shortest path ratio from any have to any want?
-      // - risk transfer time?
-      // - minimum viable opportunity?
-      // then execute
-
-    })
+        // actually consider:
+        // - trade/withdrawal fees
+        // - coins (ignore fiat?)
+        // - getting assets in right coin/exchange
+        //   - insist on BTC as entry coin?
+        //   - otherwise calculate shortest path ratio from any have to any want?
+        // - risk transfer time?
+        // - minimum viable opportunity?
+        // then execute
+      }
+    }))
 
     // TODO: trade
     val usedExchanges = excPairTickers.filter(_._2.nonEmpty).map(_._1)
@@ -686,7 +726,7 @@ class Exchanges(var whitelist: List[String] = Nil) extends LazyLogging {
 
   def checkCoin(tpl: (Combo, List[Ticker])): Unit = {
     val ((pair, exc), tckrs) = tpl
-    val tickers: List[Ticker] = tckrs ::: getTicker(exc, pair).toList
+    val tickers: List[Ticker] = tckrs ::: getTicker(exc, pair).toOption.toList
     // println(s"tickers: $tickers")
     coins += (((pair, exc), tickers))
     val coin = getAlt(pair)
@@ -708,11 +748,11 @@ class Exchanges(var whitelist: List[String] = Nil) extends LazyLogging {
       println(s"have: $have")
       // val ticker = getTicker(exc, pair)
       val minSell = getTicker(exc, pair) match {
-        case None =>
+        case Failure(e) =>
           // println(s"no ticker for ${exc}, selling as market order")
           // TODO: use signal as ASK reference to make limit order
           zero
-        case Some(ticker) =>
+        case Success(ticker) =>
           // println(s"ticker: $ticker")
           ticker.getAsk * My.conf.sellMin
       }
@@ -802,7 +842,7 @@ class Exchanges(var whitelist: List[String] = Nil) extends LazyLogging {
     println(s"PING $coin $exc $signal")
     val pair = makePair(exc, coin)
     // val ticker = getTicker(exc, pair)
-    val tickerOption = getTicker(exc, pair)
+    val tickerOption = getTicker(exc, pair).toOption
     pingProblem(signal, tickerOption) match {
       case Some(e) => println(e)
       case None =>

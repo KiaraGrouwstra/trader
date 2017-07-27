@@ -12,7 +12,7 @@ sbt dependency-graph
 # make jar
 sbt assembly
 # run jar
-java -jar ./target/scala-2.12/Trader-*.jar
+java -jar ./target/scala-2.12/Trader-*.jar | tee -a trader.log
 # testing XChange
 mvn '-DfailIfNoTests=false' '-DskipIntegrationTests=false' test
 mvn '-DfailIfNoTests=false' '-Dtest=org.knowm.xchange.examples.yobit.*' '-DskipIntegrationTests=false' test
@@ -30,6 +30,7 @@ Project scope:
 
 Extra:
 - switch to akka
+- exchange tests as data, so it knows beforehand which exchanges are missing certain functionality
 - make smarter:
 	- move across exchanges (when needed/available)
 	- cancel orders if they'd no longer expect fill / be profitable

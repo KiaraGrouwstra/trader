@@ -88,4 +88,22 @@ object Util {
     }
   }
 
+  // lst.flatMap(tryMap(tryFn))
+  def tryMap[A, B](f: A=>Try[B], max: Int = 3): A=>List[B] = {
+    var left = max
+    (v: A) => if (left == 0) Nil else {
+      val res = f(v)
+      res match {
+        case Success(v) => 
+          res
+        case Failure(e) => 
+          left -= 1
+          if (left == 0) {
+            println(s"abandoning map due to ${max} consecutives failures: ${e}")
+          }
+      }
+      res.toOption.toList
+    }
+  }
+
 }
