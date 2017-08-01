@@ -29,7 +29,9 @@ Project scope:
 	- Cryptopia: [not implemented](https://github.com/timmolter/XChange/issues/1596)
 
 Extra:
+- wrap Xchange methods in functions returning Try monads to take care of null checks / exception catching
 - switch to akka
+- don't flip the original pair data, or I'd query for pairs that don't exist
 - exchange tests as data, so it knows beforehand which exchanges are missing certain functionality
 - make smarter:
 	- move across exchanges (when needed/available)

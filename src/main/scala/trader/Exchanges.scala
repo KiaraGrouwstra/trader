@@ -722,6 +722,9 @@ class Exchanges(var whitelist: List[String] = Nil) extends LazyLogging {
     val numExchanges: Int = usedExchanges.size
     println(s"numExchanges: ${numExchanges}")
 
+    println(s"done, terminating!")
+    system.terminate
+
   }
 
   def checkCoin(tpl: (Combo, List[Ticker])): Unit = {

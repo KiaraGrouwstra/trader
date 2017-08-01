@@ -1,4 +1,6 @@
-project
+# project
+/project/project
+/project/target
 log
 .idea
 target
