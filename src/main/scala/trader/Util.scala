@@ -40,10 +40,25 @@ object Util {
   }
 
   def yamlFile(file: String): Either[ParsingFailure, Json] = {
-    val inputStream = getClass.getClassLoader.getResourceAsStream(file)
-    // val yaml = Source.fromFile(getStream(file)).mkString
-    val utf8 = java.nio.charset.StandardCharsets.UTF_8
-    val yaml = org.apache.commons.io.IOUtils.toString(inputStream, utf8)
+    val loader = getClass.getClassLoader
+    def internal = () => {
+      val inputStream = loader.getResourceAsStream(file)
+      val utf8 = java.nio.charset.StandardCharsets.UTF_8
+      org.apache.commons.io.IOUtils.toString(inputStream, utf8)
+    }
+    val jarPath = getClass.getProtectionDomain.getCodeSource.getLocation.toURI.getPath
+    val dirPath = new java.io.File(jarPath).getParent
+    val fPath = s"${dirPath}/${file}"
+    val yaml = if (!jarPath.endsWith(".jar")) internal() else try {
+      Source.fromFile(fPath).mkString
+    } catch {
+      case ex @ (_: java.io.FileNotFoundException | _: java.lang.NullPointerException) => {
+        println(ex)
+        println(s"no external file '${fPath}' found, falling back to internal config")
+        internal()
+      }
+    }
+    // println(yaml)
     parser.parse(yaml)
   }
 
