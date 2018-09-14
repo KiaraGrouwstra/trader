@@ -10,7 +10,8 @@ object FollowPings {
     val exchanges = new Exchanges(List(
       "org.knowm.xchange.bittrex.v1.BittrexExchange",
       "org.knowm.xchange.poloniex.PoloniexExchange",
-      // "org.knowm.xchange.yobit.YoBitExchange",
+      "org.knowm.xchange.yobit.YoBitExchange",
+      "org.knowm.xchange.cryptopia.CryptopiaExchange",
     ))
     if (exchanges.exchanges.isEmpty) {
       throw new Exception("no exchanges passed init!")

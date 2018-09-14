@@ -38,16 +38,15 @@ object TestXchange {
       // issues: null for AccountService and Ticker
 
   def main(args: Array[String]): Unit = {
-    val exchanges = new Exchanges(Nil)
-
-    // val exchanges = new Exchanges(key :: Nil)
-    // // val poloniex = exchanges.exchanges("org.knowm.xchange.poloniex.PoloniexExchange")
-    // // val bittrex = exchanges.exchanges("org.knowm.xchange.bittrex.v1.BittrexExchange")
-    // // val yobit = exchanges.exchanges("org.knowm.xchange.yobit.YoBitExchange")
-    // // val exc = bittrex
-    // // val exc = poloniex
-    // val exc = exchanges.exchanges(key)
-    // println(s"exc: $exc")
+    // val exchanges = new Exchanges(Nil)
+    val exchanges = new Exchanges(key :: Nil)
+    // val poloniex = exchanges.exchanges("org.knowm.xchange.poloniex.PoloniexExchange")
+    // val bittrex = exchanges.exchanges("org.knowm.xchange.bittrex.v1.BittrexExchange")
+    // val yobit = exchanges.exchanges("org.knowm.xchange.yobit.YoBitExchange")
+    // val exc = bittrex
+    // val exc = poloniex
+    val exc = exchanges.exchanges(key)
+    println(s"exc: $exc")
 
     // val pairs = exc.getExchangeMetaData.getCurrencyPairs
     // val altcoins: List[String] = pairs.keys.toList
@@ -90,6 +89,14 @@ object TestXchange {
     //   // each [type, tradableAmount, currencyPair, price, timestamp, id]
     // }
 
+    val trade: TradeService = exc.getTradeService
+    retry(3)({
+      trade.getTradeHistory(trade.createTradeHistoryParams)
+    }).map((userTrades: UserTrades) => {
+      val trades: List[UserTrade] = userTrades.getUserTrades.asScala.toList
+      println(s"trades: $trades")
+    })
+
   	// val res = exchanges.move(
   	//   poloniex,
   	//   bittrex,
@@ -101,7 +108,7 @@ object TestXchange {
   	// exchanges.invest(exc, new Currency("BCY"), 0.00019900)
   	// exchanges.invest(exc, new Currency("PKB"), 0.00011500)
 
-    exchanges.arb
+    // exchanges.arb
 
   }
 
